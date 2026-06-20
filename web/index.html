@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>archview</title>
+<style>
+  :root {
+    --bg: #0a0d13; --panel: #10141b; --panel2: #151a23; --line-solid: #222b38;
+    --text: #e8ebf0; --muted: #828d9e; --faint: #5a6575;
+    --edge: #3b4658; --edge-route: #f0a830;
+    --endpoint: #f0a830; --controller: #4c8dff; --service: #2dd4a7;
+    --repository: #b06bf2; --other: #6b7585;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  header { display: flex; align-items: center; gap: 16px; padding: 9px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--line-solid); flex: none; }
+  header h1 { font-size: 13px; font-weight: 700; margin: 0; letter-spacing: .04em; }
+  header h1 .dot { color: var(--controller); }
+  header .module { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  header .spacer { flex: 1; }
+  .legend { display: flex; gap: 13px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  .legend i { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+  .counts { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 12px; }
+  main { position: relative; flex: 1; overflow: hidden; cursor: grab; }
+  main.panning { cursor: grabbing; }
+  svg { width: 100%; height: 100%; display: block; }
+
+  .toolbar { position: absolute; top: 12px; right: 12px; display: flex; gap: 4px;
+    background: var(--panel2); border: 1px solid var(--line-solid); border-radius: 10px;
+    padding: 4px; box-shadow: 0 6px 24px #0008; }
+  .toolbar button { appearance: none; border: 0; background: transparent; color: var(--muted);
+    font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 7px; cursor: pointer; }
+  .toolbar button:hover { background: #ffffff10; color: var(--text); }
+  .toolbar .sep { width: 1px; background: var(--line-solid); margin: 3px 2px; }
+
+  .lane { cursor: grab; }
+  .lane.dragging { cursor: grabbing; }
+  .lane .lane-bg { fill: #ffffff04; stroke: var(--line-solid); stroke-width: 1; }
+  .lane.alt .lane-bg { fill: #ffffff07; }
+  .lane:hover .lane-bg { stroke: #334052; }
+  .lane:hover .lname { fill: #fff; }
+  .lane .chev { fill: var(--muted); font-size: 10px; }
+  .lane .lname { fill: var(--text); font-size: 12px; font-weight: 600; }
+  .lane .grip { fill: var(--faint); font-size: 12px; letter-spacing: 1px; }
+  .lane .pill { fill: #ffffff0e; }
+  .lane .pill-t { fill: var(--muted); font-size: 10px; font-weight: 600; }
+
+  .node { cursor: grab; }
+  .node.dragging { cursor: grabbing; }
+  .node .card { stroke-width: 1.5; filter: url(#nshadow); }
+  .node .label { font-size: 12.5px; font-weight: 550; fill: var(--text); pointer-events: none; }
+  .node .sub { font-size: 10px; fill: var(--muted); pointer-events: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .modbox .card { stroke-dasharray: 5 3; }
+
+  .edge { fill: none; stroke: var(--edge); stroke-width: 1.5; opacity: .8; }
+  .edge.route { stroke: var(--edge-route); stroke-dasharray: 5 4; opacity: .85; }
+  .dim { opacity: .08 !important; transition: opacity .12s; }
+  .hot { opacity: 1 !important; stroke-width: 2.2; }
+  .col-head { fill: var(--faint); font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .12em; }
+
+  footer { flex: none; padding: 6px 16px; background: var(--panel); border-top: 1px solid var(--line-solid);
+    color: var(--muted); min-height: 28px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  footer b { color: var(--text); font-weight: 600; }
+  .empty { position: absolute; inset: 0; display: none; place-items: center; color: var(--muted); }
+  .empty.show { display: grid; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>arch<span class="dot">view</span></h1>
+    <span class="module" id="module"></span>
+    <span class="spacer"></span>
+    <span class="legend">
+      <span><i style="background:var(--endpoint)"></i>endpoint</span>
+      <span><i style="background:var(--controller)"></i>controller</span>
+      <span><i style="background:var(--service)"></i>service</span>
+      <span><i style="background:var(--repository)"></i>repository</span>
+      <span><i style="background:var(--other)"></i>other</span>
+    </span>
+    <span class="counts" id="counts"></span>
+  </header>
+  <main id="main">
+    <svg id="svg"><g id="viewport"><g id="content"></g></g></svg>
+    <div class="toolbar" id="toolbar">
+      <button data-act="fit">Fit</button>
+      <button data-act="expand">Expand all</button>
+      <button data-act="collapse">Collapse all</button>
+      <span class="sep"></span>
+      <button data-act="zoomin" title="zoom in">+</button>
+      <button data-act="zoomout" title="zoom out">−</button>
+    </div>
+    <div class="empty" id="empty">no graph data — no endpoints or layered functions detected</div>
+  </main>
+  <footer id="footer">drag a lane to move the whole module · drag a node to reposition · click a lane header to collapse · click a node to open in editor</footer>
+</div>
+<script>
+const BASE = "__BASE__";
+const LAYER_ORDER = ["endpoint","controller","service","repository","other"];
+const COLOR = { endpoint:"#f0a830", controller:"#4c8dff", service:"#2dd4a7", repository:"#b06bf2", other:"#6b7585" };
+const TINT  = { endpoint:"#1d1708", controller:"#0e1726", service:"#0a201a", repository:"#170e26", other:"#12161d" };
+const NS = "http://www.w3.org/2000/svg";
+const COLW = 300, NODEW = 244, NODEH = 50, VGAP = 16, COLPAD = 26, LANE_HEAD = 34, LANE_GAP = 22, LEFT = 26, TOP = 24;
+
+const el = (tag, attrs={}, kids=[]) => {
+  const n = document.createElementNS(NS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  for (const c of kids) n.appendChild(c);
+  return n;
+};
+const txt = s => document.createTextNode(s);
+const esc = s => (s || "").replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c]));
+const short = f => { if (!f) return ""; const s = f.split("/"); return s.slice(-3).join("/"); };
+const shortPkg = p => { if (!p) return ""; const s = p.split("/"); return s.slice(-2).join("/"); };
+const off = (map, k) => map[k] || { dx: 0, dy: 0 };
+
+let G, nodeById = {}, modulesAll = [];
+const collapsed = new Set();
+const nodeDelta = {};            // id -> {dx,dy}   (per-node nudge from base)
+const laneOffset = {};           // module -> {dx,dy} (whole-lane move)
+let Pbase = {}, P = {};          // base / final positions: id -> {x,y,node,box,module}
+let adj = {}, nodeEls = {}, edgeEls = [], laneEls = {};
+let view = { x: 0, y: 0, w: 1000, h: 700 }, viewInit = false, lastSize = { W: 1000, H: 700 };
+
+const content = document.getElementById("content");
+const svg = document.getElementById("svg");
+const mainEl = document.getElementById("main");
+
+async function main() {
+  const res = await fetch(BASE + "/data");
+  G = await res.json();
+  document.getElementById("module").textContent = G.module || "";
+  document.getElementById("counts").textContent = `${G.nodes.length} nodes · ${G.edges.length} edges`;
+  for (const n of G.nodes) nodeById[n.id] = n;
+  if (!G.nodes.length) { document.getElementById("empty").classList.add("show"); return; }
+  modulesAll = [...new Set(G.nodes.map(moduleName))].sort();
+  setupControls();
+  render();
+}
+
+const moduleName = n => n.module || "(root)";
+
+function columns() {
+  const present = new Set();
+  for (const n of G.nodes) present.add(n.layer);
+  if (collapsed.size) present.add("controller");
+  const cols = LAYER_ORDER.filter(l => present.has(l));
+  const x = {}; cols.forEach((l, i) => x[l] = LEFT + COLPAD + i * COLW);
+  return { cols, x };
+}
+
+// computeLayout assigns BASE positions (offsets applied later in recompute).
+function computeLayout() {
+  const { cols, x } = columns();
+  const boxCol = x.controller != null ? "controller" : (cols.find(c => c !== "endpoint") || cols[0]);
+  const modules = [...new Set(G.nodes.map(moduleName))].sort();
+  const pos = {}, lanes = [];
+  let y = TOP + 16;
+
+  for (const m of modules) {
+    const laneNodes = G.nodes.filter(n => moduleName(n) === m);
+    const isCol = collapsed.has(m);
+    const colGroups = {};
+    const push = (layer, e) => (colGroups[layer] = colGroups[layer] || []).push(e);
+    for (const n of laneNodes) {
+      if (n.kind === "endpoint") { push("endpoint", { id: n.id, node: n }); continue; }
+      if (isCol) continue;
+      push(n.layer, { id: n.id, node: n });
+    }
+    if (isCol) {
+      const hidden = laneNodes.filter(n => n.kind !== "endpoint");
+      push(boxCol, { id: "mod:" + m, box: { module: m, count: hidden.length } });
+    }
+    let rows = 1;
+    for (const c in colGroups) rows = Math.max(rows, colGroups[c].length);
+    const nodeTop = y + LANE_HEAD;
+    for (const c in colGroups) colGroups[c].forEach((e, i) => {
+      pos[e.id] = { x: x[c], y: nodeTop + i * (NODEH + VGAP), node: e.node, box: e.box, module: m };
+    });
+    const laneH = LANE_HEAD + rows * (NODEH + VGAP) - VGAP + 14;
+    lanes.push({ module: m, y, h: laneH, collapsed: isCol, count: laneNodes.filter(n => n.kind !== "endpoint").length });
+    y += laneH + LANE_GAP;
+  }
+  const W = LEFT + COLPAD + cols.length * COLW + 20, H = y + 20;
+  return { cols, x, pos, lanes, edges: remapEdges(pos), W, H };
+}
+
+function remapEdges(pos) {
+  const key = id => {
+    const n = nodeById[id]; if (!n) return id;
+    if (n.kind === "endpoint") return id;
+    return collapsed.has(moduleName(n)) ? "mod:" + moduleName(n) : id;
+  };
+  const seen = new Set(), edges = [];
+  for (const e of G.edges) {
+    const a = key(e.from), b = key(e.to);
+    if (a === b || !pos[a] || !pos[b]) continue;
+    const k = a + "|" + b + "|" + e.kind;
+    if (!seen.has(k)) { seen.add(k); edges.push({ from: a, to: b, kind: e.kind }); }
+  }
+  return edges;
+}
+
+// recompute applies lane + node offsets to base positions -> final P.
+function recompute() {
+  P = {};
+  for (const id in Pbase) {
+    const b = Pbase[id], lo = off(laneOffset, b.module), nd = off(nodeDelta, id);
+    P[id] = { x: b.x + lo.dx + nd.dx, y: b.y + lo.dy + nd.dy, node: b.node, box: b.box, module: b.module };
+  }
+}
+
+function applyTransforms() {
+  for (const id in nodeEls) if (P[id]) nodeEls[id].setAttribute("transform", `translate(${P[id].x},${P[id].y})`);
+  for (const m in laneEls) { const lo = off(laneOffset, m); laneEls[m].setAttribute("transform", `translate(${lo.dx},${lo.dy})`); }
+  for (const p of edgeEls) { const a = P[p.dataset.from], b = P[p.dataset.to]; if (a && b) p.setAttribute("d", edgeD(a, b)); }
+}
+
+function edgeD(a, b) {
+  const x1 = a.x + NODEW, y1 = a.y + NODEH / 2, x2 = b.x, y2 = b.y + NODEH / 2;
+  const dx = Math.max(46, Math.abs(x2 - x1) * 0.5);
+  return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
+}
+
+function render() {
+  content.replaceChildren();
+  nodeEls = {}; edgeEls = []; adj = {}; laneEls = {};
+  const L = computeLayout();
+  Pbase = L.pos; lastSize = { W: L.W, H: L.H };
+
+  const defs = el("defs");
+  for (const [id, color] of [["arr", "#5b6679"], ["arr-route", "#f0a830"]]) {
+    const m = el("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" });
+    m.appendChild(el("path", { d: "M0,0 L10,5 L0,10 z", fill: color })); defs.appendChild(m);
+  }
+  const f = el("filter", { id: "nshadow", x: "-20%", y: "-30%", width: "140%", height: "160%" });
+  f.appendChild(el("feDropShadow", { dx: 0, dy: 1.5, stdDeviation: 2.5, "flood-color": "#000", "flood-opacity": "0.55" }));
+  defs.appendChild(f);
+  const grid = el("pattern", { id: "grid", width: 26, height: 26, patternUnits: "userSpaceOnUse" });
+  grid.appendChild(el("circle", { cx: 1, cy: 1, r: 1, fill: "#ffffff09" }));
+  defs.appendChild(grid);
+  content.appendChild(defs);
+  content.appendChild(el("rect", { x: -3000, y: -3000, width: L.W + 6000, height: L.H + 6000, fill: "url(#grid)" }));
+
+  // lanes (draggable groups)
+  const laneLayer = el("g"); content.appendChild(laneLayer);
+  L.lanes.forEach((lane, i) => {
+    const g = el("g", { class: "lane" + (i % 2 ? " alt" : ""), "data-module": lane.module });
+    g.appendChild(el("rect", { class: "lane-bg", x: LEFT - 10, y: lane.y, width: L.W - LEFT - 2, height: lane.h, rx: 12 }));
+    g.appendChild(el("text", { class: "grip", x: LEFT + 2, y: lane.y + 22 }, [txt("⠿")]));
+    g.appendChild(el("text", { class: "chev", x: LEFT + 16, y: lane.y + 21 }, [txt(lane.collapsed ? "▶" : "▼")]));
+    g.appendChild(el("text", { class: "lname", x: LEFT + 30, y: lane.y + 22 }, [txt(lane.module)]));
+    const px = LEFT + 30 + lane.module.length * 7.6 + 10;
+    g.appendChild(el("rect", { class: "pill", x: px, y: lane.y + 11, width: (lane.collapsed ? 74 : 40), height: 16, rx: 8 }));
+    g.appendChild(el("text", { class: "pill-t", x: px + 7, y: lane.y + 22 }, [txt(`${lane.count} fn${lane.collapsed ? " ·collapsed" : ""}`)]));
+    attachLaneDrag(g, lane.module);
+    laneEls[lane.module] = g;
+    laneLayer.appendChild(g);
+  });
+
+  for (const c of L.cols) content.appendChild(el("text", { class: "col-head", x: L.x[c], y: TOP }, [txt(c)]));
+
+  const edgeLayer = el("g"); content.appendChild(edgeLayer);
+  const addAdj = (a, b) => { (adj[a] = adj[a] || new Set()).add(b); (adj[b] = adj[b] || new Set()).add(a); };
+  for (const e of L.edges) {
+    const p = el("path", { class: "edge" + (e.kind === "route" ? " route" : ""),
+      "marker-end": e.kind === "route" ? "url(#arr-route)" : "url(#arr)" });
+    p.dataset.from = e.from; p.dataset.to = e.to;
+    edgeLayer.appendChild(p); edgeEls.push(p); addAdj(e.from, e.to);
+  }
+
+  const nodeLayer = el("g"); content.appendChild(nodeLayer);
+  for (const id in Pbase) nodeLayer.appendChild(buildNode(id, Pbase[id]));
+
+  recompute(); applyTransforms();
+  if (!viewInit) { fitView(); viewInit = true; }
+}
+
+function buildNode(id, b) {
+  const g1 = el("g", { class: b.box ? "node modbox" : "node" });
+  if (b.box) {
+    g1.appendChild(el("rect", { class: "card", width: NODEW, height: NODEH, rx: 9, fill: "#161b24", stroke: "#5b6679" }));
+    g1.appendChild(el("text", { class: "label", x: 14, y: 21 }, [txt("▶ " + b.box.module)]));
+    g1.appendChild(el("text", { class: "sub", x: 14, y: 37 }, [txt(`${b.box.count} fn collapsed · click to expand`)]));
+  } else {
+    const n = b.node, color = COLOR[n.layer] || COLOR.other, tint = TINT[n.layer] || TINT.other;
+    g1.appendChild(el("rect", { class: "card", width: NODEW, height: NODEH, rx: 9, fill: tint, stroke: color }));
+    g1.appendChild(el("rect", { x: 0, y: 8, width: 4, height: NODEH - 16, rx: 2, fill: color }));
+    g1.appendChild(el("circle", { cx: NODEW - 14, cy: 15, r: 3.5, fill: color }));
+    const label = n.label.length > 30 ? n.label.slice(0, 29) + "…" : n.label;
+    g1.appendChild(el("text", { class: "label", x: 14, y: 21 }, [txt(label)]));
+    const sub = n.kind === "endpoint" ? (n.method + (n.module ? "  ·  " + n.module : ""))
+      : (n.module ? n.module + "  ·  " + shortPkg(n.pkg) : shortPkg(n.pkg));
+    g1.appendChild(el("text", { class: "sub", x: 14, y: 37 }, [txt(sub || "")]));
+  }
+  g1.addEventListener("mouseenter", () => highlight(id));
+  g1.addEventListener("mouseleave", clearHi);
+  attachDrag(g1, id);
+  nodeEls[id] = g1;
+  return g1;
+}
+
+function toggle(m) { collapsed.has(m) ? collapsed.delete(m) : collapsed.add(m); render(); }
+
+// drag a single node -> updates nodeDelta[id]
+function attachDrag(g1, id) {
+  g1.addEventListener("mousedown", e => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const start = clientToSvg(e.clientX, e.clientY), base = { ...off(nodeDelta, id) };
+    let moved = false;
+    g1.classList.add("dragging");
+    const onMove = ev => {
+      const c = clientToSvg(ev.clientX, ev.clientY), dx = c.x - start.x, dy = c.y - start.y;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+      nodeDelta[id] = { dx: base.dx + dx, dy: base.dy + dy };
+      recompute(); applyTransforms();
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp);
+      g1.classList.remove("dragging");
+      if (!moved) onClick(id);
+    };
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+  });
+}
+
+// drag a whole lane -> updates laneOffset[module]; a click (no move) collapses
+function attachLaneDrag(g, module) {
+  g.addEventListener("mousedown", e => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const start = clientToSvg(e.clientX, e.clientY), base = { ...off(laneOffset, module) };
+    let moved = false;
+    g.classList.add("dragging");
+    const onMove = ev => {
+      const c = clientToSvg(ev.clientX, ev.clientY), dx = c.x - start.x, dy = c.y - start.y;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+      laneOffset[module] = { dx: base.dx + dx, dy: base.dy + dy };
+      recompute(); applyTransforms();
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp);
+      g.classList.remove("dragging");
+      if (!moved) toggle(module);
+    };
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+  });
+}
+
+function onClick(id) {
+  const p = P[id];
+  if (p.box) { collapsed.delete(p.box.module); render(); return; }
+  if (p.node && p.node.editorURL) window.location.href = p.node.editorURL;
+}
+
+function highlight(id) {
+  const keep = new Set([id, ...(adj[id] || [])]);
+  for (const k in nodeEls) nodeEls[k].classList.toggle("dim", !keep.has(k));
+  for (const p of edgeEls) {
+    const on = p.dataset.from === id || p.dataset.to === id;
+    p.classList.toggle("dim", !on); p.classList.toggle("hot", on);
+  }
+  const p = P[id], ft = document.getElementById("footer");
+  if (p.box) ft.innerHTML = `<b>${esc(p.box.module)}</b> module · ${p.box.count} functions collapsed · click to expand`;
+  else { const n = p.node; ft.innerHTML = n.kind === "endpoint"
+    ? `<b>${esc(n.method)} ${esc(n.path || "(dynamic)")}</b>`
+    : `<b>${esc(n.label)}</b> · ${esc(n.pkg)} · ${esc(short(n.file))}:${n.line}${n.editorURL ? " · click to open" : ""}`; }
+}
+function clearHi() {
+  for (const k in nodeEls) nodeEls[k].classList.remove("dim");
+  for (const p of edgeEls) p.classList.remove("dim", "hot");
+}
+
+function applyView() { svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`); }
+function clientToSvg(cx, cy) {
+  const r = svg.getBoundingClientRect();
+  return { x: view.x + (cx - r.left) / r.width * view.w, y: view.y + (cy - r.top) / r.height * view.h };
+}
+function fitView() {
+  const pad = 30, aspect = mainEl.clientWidth / mainEl.clientHeight || 1.4;
+  let w = lastSize.W + pad * 2, h = lastSize.H + pad * 2;
+  if (w / h > aspect) h = w / aspect; else w = h * aspect;
+  view = { x: -pad - (w - (lastSize.W + pad * 2)) / 2, y: -pad - (h - (lastSize.H + pad * 2)) / 2, w, h };
+  applyView();
+}
+function zoomBy(k) {
+  const cx = view.x + view.w / 2, cy = view.y + view.h / 2;
+  view.x = cx - (cx - view.x) * k; view.y = cy - (cy - view.y) * k;
+  view.w *= k; view.h *= k; applyView();
+}
+
+function setupControls() {
+  let drag = null;
+  mainEl.addEventListener("mousedown", e => {
+    if (e.target.closest(".node, .lane, .toolbar")) return;
+    drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y }; mainEl.classList.add("panning");
+  });
+  window.addEventListener("mousemove", e => {
+    if (!drag) return;
+    const k = view.w / mainEl.clientWidth;
+    view.x = drag.vx - (e.clientX - drag.x) * k; view.y = drag.vy - (e.clientY - drag.y) * k; applyView();
+  });
+  window.addEventListener("mouseup", () => { drag = null; mainEl.classList.remove("panning"); });
+  mainEl.addEventListener("wheel", e => {
+    e.preventDefault();
+    const k = e.deltaY > 0 ? 1.1 : 0.9, m = clientToSvg(e.clientX, e.clientY);
+    view.x = m.x - (m.x - view.x) * k; view.y = m.y - (m.y - view.y) * k;
+    view.w *= k; view.h *= k; applyView();
+  }, { passive: false });
+  document.getElementById("toolbar").addEventListener("click", e => {
+    const act = e.target.dataset.act; if (!act) return;
+    if (act === "fit") fitView();
+    else if (act === "expand") { collapsed.clear(); render(); fitView(); }
+    else if (act === "collapse") { modulesAll.forEach(m => collapsed.add(m)); render(); fitView(); }
+    else if (act === "zoomin") zoomBy(0.83);
+    else if (act === "zoomout") zoomBy(1.2);
+  });
+}
+
+main().catch(err => { document.getElementById("footer").textContent = "error: " + err; });
+</script>
+</body>
+</html>
