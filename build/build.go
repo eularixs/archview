@@ -29,12 +29,24 @@ var layeredLayers = map[string]bool{
 	graph.LayerRepository: true,
 }
 
+// Options controls how the graph is assembled.
+type Options struct {
+	Editor      string
+	ShowPorts   bool
+	DetectBuses bool
+	// ShowHelpers keeps trivial helper functions (unexported free functions in a
+	// classified layer) as nodes. When false (default) they are collapsed
+	// through, so a caller still links to what the helper reaches.
+	ShowHelpers bool
+}
+
 type builder struct {
 	res         *analyzer.Result
 	cl          *classify.Classifier
 	editor      string
 	showPorts   bool
 	detectBuses bool
+	showHelpers bool
 
 	included map[*ssa.Function]bool
 	layerOf  map[*ssa.Function]string
@@ -52,16 +64,15 @@ type outboundPort struct {
 	impls   []*ssa.Function
 }
 
-// Graph builds the architecture graph. When showPorts is true, outbound
-// interface ports are surfaced as nodes. When detectBuses is true, mediator
-// dispatch (command/query/event buses) is recovered as precise edges.
-func Graph(res *analyzer.Result, routes []route.Route, cl *classify.Classifier, editor string, showPorts, detectBuses bool) graph.Graph {
+// Graph builds the architecture graph per opts.
+func Graph(res *analyzer.Result, routes []route.Route, cl *classify.Classifier, opts Options) graph.Graph {
 	b := &builder{
 		res:         res,
 		cl:          cl,
-		editor:      editor,
-		showPorts:   showPorts,
-		detectBuses: detectBuses,
+		editor:      opts.Editor,
+		showPorts:   opts.ShowPorts,
+		detectBuses: opts.DetectBuses,
+		showHelpers: opts.ShowHelpers,
 		included:    map[*ssa.Function]bool{},
 		layerOf:     map[*ssa.Function]string{},
 		moduleOf:    map[*ssa.Function]string{},
@@ -72,12 +83,13 @@ func Graph(res *analyzer.Result, routes []route.Route, cl *classify.Classifier, 
 }
 
 func (b *builder) run(routes []route.Route) graph.Graph {
-	// 1. Classify every project func; include those in known layers.
+	// 1. Classify every project func; include those in known layers, skipping
+	//    trivial helpers (collapsed through later) unless ShowHelpers is set.
 	for fn, f := range b.res.Funcs {
 		layer, module := b.classify(f.Pkg)
 		b.layerOf[fn] = layer
 		b.moduleOf[fn] = module
-		if layeredLayers[layer] {
+		if layeredLayers[layer] && (b.showHelpers || !trivialHelper(f)) {
 			b.included[fn] = true
 		}
 	}
@@ -304,6 +316,15 @@ func (b *builder) reachableIncluded(fn *ssa.Function) map[*ssa.Function]bool {
 	}
 	walk(fn)
 	return out
+}
+
+// trivialHelper reports whether f is an unexported free function — a package
+// helper rather than a layer participant (controllers/services/repositories are
+// methods). Route/RPC/resolver handlers are methods or force-included, so this
+// never hides a real entry point. Such helpers are collapsed through, keeping
+// the caller connected to whatever the helper reaches.
+func trivialHelper(f *analyzer.Func) bool {
+	return f.Recv == "" && f.Name != "" && f.Name[0] >= 'a' && f.Name[0] <= 'z'
 }
 
 // classify strips the module path prefix before classifying, so a package is

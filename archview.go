@@ -52,6 +52,10 @@ type Options struct {
 	// instead of the over-approximation a static call graph produces. Off by
 	// default.
 	DetectBuses bool
+	// ShowHelpers keeps trivial helper functions (unexported free functions in a
+	// classified layer) as graph nodes. By default they are hidden and collapsed
+	// through, so the flow stays connected without the clutter.
+	ShowHelpers bool
 }
 
 // Server holds the analyzed graph and serves the UI.
@@ -82,7 +86,12 @@ func New(opts Options) (*Server, error) {
 	}
 	routes := route.Extract(res.Pkgs, extractors)
 	cl := classify.New(opts.Classify)
-	g := build.Graph(res, routes, cl, opts.Editor, opts.ShowPorts, opts.DetectBuses)
+	g := build.Graph(res, routes, cl, build.Options{
+		Editor:      opts.Editor,
+		ShowPorts:   opts.ShowPorts,
+		DetectBuses: opts.DetectBuses,
+		ShowHelpers: opts.ShowHelpers,
+	})
 
 	h, err := web.New(opts.BasePath, g)
 	if err != nil {
