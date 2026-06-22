@@ -1,0 +1,68 @@
+---
+title: Frameworks
+description: Route extraction per framework, and how to add your own.
+---
+
+Each framework registers routes differently, so endpoint detection is delegated
+to per-framework **extractors**. The built-ins are gin, net/http and gRPC; each
+runs automatically (an extractor only fires on a package that uses its
+framework).
+
+## net/http
+
+Detects `mux.HandleFunc(pattern, handler)` on `*http.ServeMux` and the
+package-level `http.HandleFunc`. The Go 1.22+ method-prefixed pattern is parsed:
+
+```go
+mux.HandleFunc("GET /catalog/items", h.ListItems)   // method GET, path /catalog/items
+```
+
+## gin
+
+Detects `GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS`, `Handle`, and `Any` on
+`*gin.Engine` / `*gin.RouterGroup`:
+
+```go
+r := gin.Default()
+api := r.Group("/api")
+api.GET("/users", userCtl.List)   // handler resolves to (*UserController).List
+```
+
+## gRPC
+
+Detected structurally from the generated registration call — no import needed,
+so it works with real `google.golang.org/grpc` as-is. Each RPC method on the
+service interface becomes an endpoint bound to the implementing method:
+
+```go
+pb.RegisterOrderServiceServer(grpcServer, &OrderServer{...})
+// endpoints: /OrderService/CreateOrder, /OrderService/GetOrder, ...
+```
+
+The server impl lives in a package classified as controller (e.g.
+`adapter/grpc`), so the RPCs flow into your service and repository like any
+other entry point.
+
+## Adding a framework
+
+Implement the `Extractor` interface and pass it via `Options.Extractors`:
+
+```go
+type Extractor interface {
+	Name() string
+	Match(pkg *packages.Package) bool       // does this pkg import the framework?
+	Extract(pkg *packages.Package) []Route  // walk syntax, return routes
+}
+```
+
+```go
+av, _ := archview.New(archview.Options{
+	Extractors: []archview.Extractor{myEchoExtractor{}, /* + defaults */},
+})
+```
+
+<Callout>
+  echo, fiber, chi, GraphQL and WebSocket adapters are on the
+  [roadmap](/docs/roadmap). The interface is already in place — contributions
+  welcome.
+</Callout>

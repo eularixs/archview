@@ -10,7 +10,7 @@ package classify
 import (
 	"strings"
 
-	"github.com/eularix/archview/graph"
+	"github.com/eularixs/archview/graph"
 )
 
 // layerKeywords maps a canonical layer to the path/package keywords that imply

@@ -6,7 +6,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/eularix/archview"
+	"github.com/eularixs/archview"
 	"github.com/gin-gonic/gin"
 
 	pc "archview-example-gin-mvc/internal/product/controller"

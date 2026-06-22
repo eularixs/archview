@@ -1,0 +1,22 @@
+{
+  "title": "Documentation",
+  "root": true,
+  "pages": [
+    "index",
+    "quickstart",
+    "installation",
+    "---Concepts---",
+    "how-it-works",
+    "layer-classification",
+    "patterns",
+    "ports",
+    "buses",
+    "frameworks",
+    "---Reference---",
+    "configuration",
+    "ui-guide",
+    "examples",
+    "limitations",
+    "roadmap"
+  ]
+}

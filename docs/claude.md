@@ -34,5 +34,5 @@ docs/              # prd, context, plan, tasks
 
 ## Git
 
-- Module path `github.com/eularix/archview` → Eularix identity (`Eularix <dimas.eularix@gmail.com>`, SSH `github.com-eularix`).
+- Module path `github.com/eularixs/archview` → Eularix identity (`Eularix <dimas.eularix@gmail.com>`, SSH `github.com-eularix`).
 - JANGAN auto commit/push. JANGAN trailer `Co-Authored-By: Claude`.

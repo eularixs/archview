@@ -17,12 +17,12 @@ package archview
 import (
 	"net/http"
 
-	"github.com/eularix/archview/analyzer"
-	"github.com/eularix/archview/build"
-	"github.com/eularix/archview/classify"
-	"github.com/eularix/archview/graph"
-	"github.com/eularix/archview/route"
-	"github.com/eularix/archview/web"
+	"github.com/eularixs/archview/analyzer"
+	"github.com/eularixs/archview/build"
+	"github.com/eularixs/archview/classify"
+	"github.com/eularixs/archview/graph"
+	"github.com/eularixs/archview/route"
+	"github.com/eularixs/archview/web"
 )
 
 // Extractor is a per-framework route detector. Implement it to support a
@@ -43,6 +43,15 @@ type Options struct {
 	Extractors []Extractor
 	// Classify optionally extends layer-classification keywords.
 	Classify *classify.Config
+	// ShowPorts surfaces outbound interface ports (a hexagonal seam) as nodes:
+	// service -> port (uses) and repository -> port (implements). Off by default
+	// so MVC graphs stay unchanged.
+	ShowPorts bool
+	// DetectBuses recovers command/query/event mediator routing: it reads the
+	// bus registration sites and draws precise caller -> handler dispatch edges
+	// instead of the over-approximation a static call graph produces. Off by
+	// default.
+	DetectBuses bool
 }
 
 // Server holds the analyzed graph and serves the UI.
@@ -73,7 +82,7 @@ func New(opts Options) (*Server, error) {
 	}
 	routes := route.Extract(res.Pkgs, extractors)
 	cl := classify.New(opts.Classify)
-	g := build.Graph(res, routes, cl, opts.Editor)
+	g := build.Graph(res, routes, cl, opts.Editor, opts.ShowPorts, opts.DetectBuses)
 
 	h, err := web.New(opts.BasePath, g)
 	if err != nil {

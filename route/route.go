@@ -28,7 +28,7 @@ type Extractor interface {
 
 // Default returns the built-in extractors (auto-detected per package).
 func Default() []Extractor {
-	return []Extractor{ginExtractor{}, netHTTPExtractor{}}
+	return []Extractor{ginExtractor{}, netHTTPExtractor{}, grpcExtractor{}}
 }
 
 // Extract runs the given extractors over all packages, returning every route

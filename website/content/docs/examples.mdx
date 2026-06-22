@@ -1,0 +1,60 @@
+---
+title: Examples
+description: Two runnable demos in the repository.
+---
+
+The repo ships two example apps under `examples/`. Each mounts archview and
+demonstrates a different architecture.
+
+## gin-mvc
+
+Modular MVC over **gin** — `user` and `product` modules, each wired
+repository → service → controller through interfaces.
+
+```sh
+go -C examples/gin-mvc run -buildvcs=false .
+# open http://localhost:8080/graph
+```
+
+You'll see two swimlanes; each endpoint flows
+`GET /users → (*UserController).List → (*userService).ListUsers → (*userRepository).FindAllUsers`.
+
+## hexagonal
+
+Ports & adapters over **net/http** — `catalog` and `billing` bounded contexts.
+The catalog use case fans out to two outbound adapters (a Postgres repository
+and a gateway notifier).
+
+```sh
+go -C examples/hexagonal run -buildvcs=false .
+# open http://localhost:8090/graph
+```
+
+Runs with `ShowPorts`, so the `OrderRepository` and `ItemNotifier` interfaces
+appear as [port](/docs/ports) nodes.
+
+## cqrs
+
+CQRS + command/query/event buses over **net/http**, run with `DetectBuses`.
+Each HTTP endpoint dispatches a command or query through a bus; handlers publish
+domain events to subscribers — and archview draws the precise routing.
+
+```sh
+go -C examples/cqrs run -buildvcs=false .
+# open http://localhost:8095/graph
+```
+
+## grpc
+
+A gRPC `OrderService` in clean architecture. The RPC methods are detected as
+endpoints and flow through the server adapter → service → repository.
+
+```sh
+go -C examples/grpc run -buildvcs=false .
+# open http://localhost:8096/graph
+```
+
+<Callout>
+  Each example is a separate Go module with a <code>replace</code> directive
+  pointing at the repo root, so they always build against your local copy.
+</Callout>

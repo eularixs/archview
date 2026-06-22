@@ -1,0 +1,53 @@
+---
+title: How it works
+description: The analysis pipeline, from source to graph.
+---
+
+archview is **static analysis**, not a runtime tracer. At startup it reads your
+source and derives the graph in one pass:
+
+```
+source → go/packages (AST + types) → CHA call graph
+       → classify layers (folder/naming) → extract routes (per framework)
+       → graph model → /graph (embedded SVG renderer)
+```
+
+## 1. Load packages
+
+It loads your module with `golang.org/x/tools/go/packages` (syntax + type
+info), then builds the SSA form with `ssautil`. Only your project's own
+packages are kept; standard library and dependencies are excluded from the
+node set.
+
+## 2. Build the call graph
+
+A **CHA** (Class Hierarchy Analysis) call graph resolves calls — including calls
+through interfaces — to their implementing methods. For the common case of one
+implementation per interface (a service interface with a single impl), this is
+exact, which is why `controller → service → repository` edges appear even when
+the layers are wired through interfaces.
+
+## 3. Classify layers
+
+Each function's import path is mapped to a layer (controller / service /
+repository) by [naming convention](/docs/layer-classification), and to a module
+(the bounded-context name).
+
+## 4. Extract routes
+
+A per-framework [extractor](/docs/frameworks) walks the syntax for route
+registrations (`r.GET(...)`, `mux.HandleFunc(...)`) and resolves each to the
+handler function it points at.
+
+## 5. Assemble the graph
+
+The builder keeps endpoints and layered functions, derives the call edges
+between them (collapsing through unclassified helper functions so a thin wrapper
+doesn't break a `controller → service` link), prunes isolated nodes, and attaches
+each function's `file:line:col` as an editor deep link.
+
+<Callout>
+  Because the graph is computed once at `New()`, it is a **snapshot**. Restart
+  (or re-call `New`) to pick up source changes. Live reload is on the
+  [roadmap](/docs/roadmap).
+</Callout>

@@ -12,12 +12,15 @@ import (
 const (
 	KindEndpoint = "endpoint" // an HTTP route entry point
 	KindFunc     = "func"     // a Go function/method in a classified layer
+	KindPort     = "port"     // an interface that sits as a seam between layers
 )
 
 // Edge kinds.
 const (
-	EdgeRoute = "route" // endpoint -> handler function
-	EdgeCall  = "call"  // function -> function (caller -> callee)
+	EdgeRoute      = "route"      // endpoint -> handler function
+	EdgeCall       = "call"       // function -> function (caller -> callee)
+	EdgeImplements = "implements" // concrete method -> port interface (adapter implements port)
+	EdgeDispatch   = "dispatch"   // caller -> handler routed through a command/event bus
 )
 
 // Layers. "other" is the fallback for funcs that don't match a known layer.
@@ -25,12 +28,15 @@ const (
 	LayerEndpoint   = "endpoint"
 	LayerController = "controller"
 	LayerService    = "service"
+	LayerPort       = "port"
 	LayerRepository = "repository"
 	LayerOther      = "other"
 )
 
-// LayerOrder is the left-to-right pipeline order used by the renderer.
-var LayerOrder = []string{LayerEndpoint, LayerController, LayerService, LayerRepository, LayerOther}
+// LayerOrder is the left-to-right pipeline order used by the renderer. Ports
+// sit between service and repository: a service uses a port, an adapter
+// (repository) implements it — both arrows converge on the port.
+var LayerOrder = []string{LayerEndpoint, LayerController, LayerService, LayerPort, LayerRepository, LayerOther}
 
 // Node is a single box in the graph.
 type Node struct {

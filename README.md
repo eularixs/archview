@@ -5,16 +5,18 @@ Live architecture flow graph for Go backends. Mount it in `main.go`, open
 controller → service → repository — generated automatically from your source,
 no annotations. Click any node to jump to its definition in your editor.
 
-Framework-agnostic (net/http, gin) and pattern-aware (modular MVC, hexagonal):
-the arrows follow the call graph of whatever layout you actually use.
+Framework-agnostic (net/http, gin, gRPC) and pattern-aware (modular MVC,
+hexagonal ports & adapters, CQRS / event buses): the arrows follow the call
+graph of whatever layout you actually use.
 
-> Status: **v0.1** — dev-live mode, net/http + gin, modular MVC + hexagonal.
+> Status: **v0.1+** — dev-live mode; net/http + gin + gRPC; modular MVC,
+> hexagonal (outbound ports), and CQRS/mediator (bus detection).
 > See [`docs/`](docs/) for the PRD, plan and roadmap.
 
 ## Install
 
 ```sh
-go get github.com/eularix/archview
+go get github.com/eularixs/archview
 ```
 
 ## Usage
@@ -23,9 +25,11 @@ go get github.com/eularix/archview
 mux := http.NewServeMux()
 
 av, err := archview.New(archview.Options{
-    Root:     ".",        // module dir to analyze (default ".")
-    BasePath: "/graph",   // mount path (default "/graph")
-    Editor:   "vscode",   // click-to-source: "vscode" or "cursor"
+    Root:        ".",      // module dir to analyze (default ".")
+    BasePath:    "/graph", // mount path (default "/graph")
+    Editor:      "vscode", // click-to-source: "vscode" or "cursor"
+    ShowPorts:   true,     // surface hexagonal outbound ports (default off)
+    DetectBuses: true,     // recover command/query/event routing (default off)
 })
 if err != nil {
     log.Fatal(err)
@@ -35,7 +39,8 @@ av.Mount(mux)             // serves /graph and /graph/data
 http.ListenAndServe(":8080", mux)
 ```
 
-Open <http://localhost:8080/graph>.
+Open <http://localhost:8080/graph>. `ShowPorts` and `DetectBuses` are opt-in,
+so a plain MVC graph is unchanged unless you turn them on.
 
 Using gin (or any framework)? archview owns its own path; let your framework
 handle the rest:
@@ -75,7 +80,45 @@ By convention, from the import path / package name:
 Matched as a whole path segment or a suffix (e.g. `user_service` → service,
 module `user`). Hexagonal structural dirs (`adapter`, `port`, `inbound`,
 `outbound`, …) are treated as containers so the module resolves to the
-bounded-context name. Extend via `Options.Classify`.
+bounded-context name. Classification is relative to your module path, so a
+module name that happens to contain a keyword never mis-classifies. Extend via
+`Options.Classify`.
+
+## Frameworks
+
+Route extraction is per-framework; an extractor only runs on a package that uses
+its framework.
+
+| Framework | Detected |
+|-----------|----------|
+| net/http  | `mux.HandleFunc("GET /path", h)` (Go 1.22 method patterns) |
+| gin       | `r.GET/POST/...`, `Handle`, `Any` on `*gin.Engine` / `*gin.RouterGroup` |
+| gRPC      | `Register<Svc>Server(reg, impl)` — each RPC method becomes an endpoint |
+
+gRPC detection is structural (the `Register…Server` shape), so it works with
+real `google.golang.org/grpc` as-is. Add a framework by implementing the
+`archview.Extractor` interface and passing it in `Options.Extractors`.
+
+## Outbound ports (hexagonal)
+
+With `ShowPorts: true`, an interface implemented by a repository-layer adapter
+is surfaced as a **port** node — the seam between the core and an adapter:
+
+```
+service ──uses──▶ OrderRepository (port) ◀──implements── postgres adapter
+```
+
+Both arrows converge on the interface (dependency inversion). The direct
+service→repository edge is replaced by the two edges through the port.
+
+## Buses (CQRS / event-driven)
+
+A command/query/event mediator stores handlers in a map keyed at runtime, so a
+plain call graph can only over-approximate (every dispatch fans out to every
+handler). With `DetectBuses: true`, archview reads the registration sites
+(`bus.Register(Cmd{}.Name(), NewHandler(...))`, `Subscribe(...)`) and draws the
+**precise** `caller → handler` routing instead — including event fan-out to the
+exact subscribers. Marker methods and the bus internals drop out.
 
 ## UI
 
@@ -90,22 +133,31 @@ Collapse all / zoom).
 # modular MVC over gin
 go -C examples/gin-mvc run -buildvcs=false .      # http://localhost:8080/graph
 
-# hexagonal / ports & adapters over net/http
+# hexagonal / ports & adapters over net/http (ShowPorts)
 go -C examples/hexagonal run -buildvcs=false .    # http://localhost:8090/graph
+
+# CQRS + command/query/event buses (DetectBuses)
+go -C examples/cqrs run -buildvcs=false .         # http://localhost:8095/graph
+
+# gRPC in clean architecture
+go -C examples/grpc run -buildvcs=false .         # http://localhost:8096/graph
 ```
 
-## Limitations (v0.1)
+## Limitations
 
 - Concrete calls + single-implementation interfaces (CHA). Multiple
-  implementations of one interface over-approximate the edges.
+  implementations of one interface over-approximate the edges — unless a port
+  or bus mediates them (`ShowPorts` / `DetectBuses`).
 - Route paths are the literal registered path; group/router prefixes are not
   joined yet (`/users`, not `/api/users`).
-- net/http + gin only. dev-live only (no baked artifact).
+- net/http + gin + gRPC only; dev-live only (no baked artifact).
 - Inline closure handlers create an endpoint node but no handler link.
+- Free-function helpers in a classified layer show as nodes (no
+  trivial-helper filter yet).
 
 ## Roadmap
 
 outbound/external call detection (DB/HTTP/queue) · layer-violation linter ·
-echo/fiber/chi adapters · `archview.yaml` config · prod-baked
-(`go:generate` + `go:embed`) · JetBrains editor · search/filter. See
-[`docs/prd.md`](docs/prd.md).
+GraphQL & WebSocket extractors · echo/fiber/chi adapters · trivial-helper
+filter · `archview.yaml` config · prod-baked (`go:generate` + `go:embed`) ·
+JetBrains editor · search/filter. See [`docs/prd.md`](docs/prd.md).

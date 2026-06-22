@@ -1,0 +1,50 @@
+---
+title: Patterns
+description: Modular MVC and hexagonal, recognized automatically.
+---
+
+The same classifier handles different architectures because it keys off
+conventional names, not a fixed folder layout. The flow shape ends up the same —
+that's the insight.
+
+## Modular MVC
+
+```
+internal/
+  user/
+    controller/   → controller
+    service/      → service
+    repository/   → repository
+  product/
+    ...
+```
+
+Each module becomes a swimlane; calls flow left to right through the three
+layers.
+
+## Hexagonal / ports & adapters
+
+```
+internal/
+  catalog/
+    domain/             (entities — no flow nodes)
+    port/               (interfaces — invisible seams)
+    usecase/            → service
+    adapter/
+      rest/             → controller   (inbound / driving adapter)
+      postgres/         → repository   (outbound / driven adapter)
+      gateway/          → repository   (outbound — notifier, etc.)
+```
+
+The **ports** are interfaces with no bodies, so they don't appear as nodes; the
+CHA call graph resolves each port to its concrete adapter. The result reads
+`rest → usecase → postgres`, and outbound fan-out is visible — a single use case
+can point at both a `postgres` repository and a `gateway` notifier.
+
+<Callout title="Ports & buses">
+  Turn on [`ShowPorts`](/docs/ports) to surface the outbound interface as its own
+  node, or [`DetectBuses`](/docs/buses) to recover command/query/event routing
+  through a mediator. Both are opt-in.
+</Callout>
+
+See both laid out in [Examples](/docs/examples).

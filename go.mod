@@ -1,4 +1,4 @@
-module github.com/eularix/archview
+module github.com/eularixs/archview
 
 go 1.25.5
 

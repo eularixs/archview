@@ -1,0 +1,59 @@
+---
+title: Configuration
+description: The Options struct and the public API.
+---
+
+## Options
+
+```go
+type Options struct {
+	// Root is the module directory to analyze. Defaults to ".".
+	Root string
+	// BasePath is the mount path for the UI. Defaults to "/graph".
+	BasePath string
+	// Editor is the click-to-source scheme: "vscode" or "cursor".
+	// Defaults to "vscode".
+	Editor string
+	// Extractors overrides the route extractors. Defaults to gin + net/http + gRPC.
+	Extractors []Extractor
+	// Classify optionally extends layer-classification keywords.
+	Classify *classify.Config
+	// ShowPorts surfaces outbound hexagonal ports as nodes.
+	ShowPorts bool
+	// DetectBuses recovers command/query/event mediator routing.
+	DetectBuses bool
+}
+```
+
+| Field         | Default          | Notes |
+|---------------|------------------|-------|
+| `Root`        | `"."`            | Directory of the module to analyze. |
+| `BasePath`    | `"/graph"`       | UI is served here; JSON at `{BasePath}/data`. |
+| `Editor`      | `"vscode"`       | `"vscode"` or `"cursor"`. |
+| `Extractors`  | gin, net/http, gRPC | Replace to add a framework. See [Frameworks](/docs/frameworks). |
+| `Classify`    | built-ins        | Extend layer keywords. See [Layer classification](/docs/layer-classification). |
+| `ShowPorts`   | `false`          | Surface outbound ports. See [Ports](/docs/ports). |
+| `DetectBuses` | `false`          | Recover bus routing. See [Buses](/docs/buses). |
+
+## API
+
+```go
+av, err := archview.New(opts)
+
+av.Handler()        // http.Handler serving the UI + /data
+av.Mount(mux)       // registers BasePath and BasePath+"/" on a *http.ServeMux
+av.Graph()          // the analyzed graph.Graph (for tests / custom rendering)
+av.Base()           // normalized mount path, e.g. "/graph"
+```
+
+## Click-to-source
+
+Every function node carries an absolute `file:line:col`, turned into a deep link:
+
+```
+vscode://file/<abs-path>:<line>:<col>
+cursor://file/<abs-path>:<line>:<col>
+```
+
+Set `Editor` to match your editor. JetBrains support is on the
+[roadmap](/docs/roadmap).

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/eularix/archview/graph"
+	"github.com/eularixs/archview/graph"
 )
 
 //go:embed index.html

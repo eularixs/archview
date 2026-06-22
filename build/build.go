@@ -3,16 +3,22 @@
 // functions in classified layers), then derives call edges between them —
 // collapsing through unclassified helper functions so a controller still links
 // to a service even when a thin wrapper sits in between.
+//
+// When ports are enabled, outbound interface ports (interfaces implemented by a
+// repository-layer type) become first-class nodes: the direct service ->
+// repository call is replaced by service -> port (uses) and repository -> port
+// (implements), surfacing the hexagonal seam.
 package build
 
 import (
 	"fmt"
 	"sort"
+	"strings"
 
-	"github.com/eularix/archview/analyzer"
-	"github.com/eularix/archview/classify"
-	"github.com/eularix/archview/graph"
-	"github.com/eularix/archview/route"
+	"github.com/eularixs/archview/analyzer"
+	"github.com/eularixs/archview/classify"
+	"github.com/eularixs/archview/graph"
+	"github.com/eularixs/archview/route"
 	"golang.org/x/tools/go/ssa"
 )
 
@@ -24,26 +30,43 @@ var layeredLayers = map[string]bool{
 }
 
 type builder struct {
-	res    *analyzer.Result
-	cl     *classify.Classifier
-	editor string
+	res         *analyzer.Result
+	cl          *classify.Classifier
+	editor      string
+	showPorts   bool
+	detectBuses bool
 
 	included map[*ssa.Function]bool
 	layerOf  map[*ssa.Function]string
 	moduleOf map[*ssa.Function]string
 	idOf     map[*ssa.Function]string
+	barrier  map[*ssa.Function]bool // funcs CHA must not collapse through (bus methods)
 }
 
-// Graph builds the architecture graph.
-func Graph(res *analyzer.Result, routes []route.Route, cl *classify.Classifier, editor string) graph.Graph {
+// outboundPort is a port retained for rendering plus its included endpoints.
+type outboundPort struct {
+	port    *analyzer.Port
+	id      string
+	module  string
+	callers []*ssa.Function
+	impls   []*ssa.Function
+}
+
+// Graph builds the architecture graph. When showPorts is true, outbound
+// interface ports are surfaced as nodes. When detectBuses is true, mediator
+// dispatch (command/query/event buses) is recovered as precise edges.
+func Graph(res *analyzer.Result, routes []route.Route, cl *classify.Classifier, editor string, showPorts, detectBuses bool) graph.Graph {
 	b := &builder{
-		res:      res,
-		cl:       cl,
-		editor:   editor,
-		included: map[*ssa.Function]bool{},
-		layerOf:  map[*ssa.Function]string{},
-		moduleOf: map[*ssa.Function]string{},
-		idOf:     map[*ssa.Function]string{},
+		res:         res,
+		cl:          cl,
+		editor:      editor,
+		showPorts:   showPorts,
+		detectBuses: detectBuses,
+		included:    map[*ssa.Function]bool{},
+		layerOf:     map[*ssa.Function]string{},
+		moduleOf:    map[*ssa.Function]string{},
+		idOf:        map[*ssa.Function]string{},
+		barrier:     map[*ssa.Function]bool{},
 	}
 	return b.run(routes)
 }
@@ -51,7 +74,7 @@ func Graph(res *analyzer.Result, routes []route.Route, cl *classify.Classifier, 
 func (b *builder) run(routes []route.Route) graph.Graph {
 	// 1. Classify every project func; include those in known layers.
 	for fn, f := range b.res.Funcs {
-		layer, module := b.cl.Classify(f.Pkg)
+		layer, module := b.classify(f.Pkg)
 		b.layerOf[fn] = layer
 		b.moduleOf[fn] = module
 		if layeredLayers[layer] {
@@ -65,14 +88,64 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 		}
 	}
 
+	// 2b. Detect mediator buses. Bus methods become call-graph barriers so the
+	//     over-approximated edges CHA draws through the bus are dropped; precise
+	//     dispatch edges are added in step 8.
+	var busInfo *analyzer.BusInfo
+	if b.detectBuses {
+		busInfo = b.res.Buses()
+		b.barrier = busInfo.BusMethods
+	}
+
+	// 3. Resolve outbound ports and the direct call edges they replace.
+	var ports []outboundPort
+	suppress := map[string]bool{} // "callerID->implID" call edges mediated by a port
+	if b.showPorts {
+		for _, p := range b.res.Ports() {
+			var impls []*ssa.Function
+			outbound := false
+			for fn := range p.ImplMethods {
+				if !b.included[fn] {
+					continue
+				}
+				impls = append(impls, fn)
+				if b.layerOf[fn] == graph.LayerRepository {
+					outbound = true
+				}
+			}
+			if !outbound || len(impls) == 0 {
+				continue
+			}
+			var callers []*ssa.Function
+			for fn := range p.Callers {
+				if b.included[fn] {
+					callers = append(callers, fn)
+				}
+			}
+			_, module := b.classify(p.Pkg)
+			op := outboundPort{
+				port:    p,
+				id:      "port:" + p.Pkg + "." + p.Name,
+				module:  module,
+				callers: callers,
+				impls:   impls,
+			}
+			ports = append(ports, op)
+			for _, c := range callers {
+				for _, m := range impls {
+					suppress[b.id(c)+"->"+b.id(m)] = true
+				}
+			}
+		}
+	}
+
 	g := graph.Graph{Module: b.res.Module}
 
-	// 3. Function nodes.
+	// 4. Function nodes.
 	for fn := range b.included {
 		f := b.res.Funcs[fn]
-		id := b.id(fn)
 		g.Nodes = append(g.Nodes, graph.Node{
-			ID:        id,
+			ID:        b.id(fn),
 			Kind:      graph.KindFunc,
 			Label:     f.Display(),
 			Layer:     b.layerOf[fn],
@@ -85,13 +158,14 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 		})
 	}
 
-	// 4. Call edges between included nodes (collapsing through helpers).
+	// 5. Call edges between included nodes (collapsing through helpers, skipping
+	//    any edge a port now mediates).
 	seen := map[string]bool{}
 	for fn := range b.included {
 		for callee := range b.reachableIncluded(fn) {
 			from, to := b.id(fn), b.id(callee)
 			key := from + "->" + to
-			if from == to || seen[key] {
+			if from == to || seen[key] || suppress[key] {
 				continue
 			}
 			seen[key] = true
@@ -99,7 +173,7 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 		}
 	}
 
-	// 5. Endpoint nodes + route edges to their handler.
+	// 6. Endpoint nodes + route edges to their handler.
 	for i, r := range routes {
 		epID := fmt.Sprintf("ep:%d:%s:%s", i, r.Method, r.Path)
 		module := ""
@@ -124,6 +198,51 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 		}
 	}
 
+	// 7. Port nodes + converging edges (caller uses port, adapter implements it).
+	for _, op := range ports {
+		g.Nodes = append(g.Nodes, graph.Node{
+			ID:        op.id,
+			Kind:      graph.KindPort,
+			Label:     op.port.Name,
+			Layer:     graph.LayerPort,
+			Module:    op.module,
+			Pkg:       op.port.Pkg,
+			File:      op.port.File,
+			Line:      op.port.Line,
+			EditorURL: graph.EditorURL(b.editor, op.port.File, op.port.Line, op.port.Col),
+		})
+		for _, c := range op.callers {
+			g.Edges = append(g.Edges, graph.Edge{From: b.id(c), To: op.id, Kind: graph.EdgeCall})
+		}
+		for _, m := range op.impls {
+			g.Edges = append(g.Edges, graph.Edge{From: b.id(m), To: op.id, Kind: graph.EdgeImplements})
+		}
+	}
+
+	// 8. Precise dispatch edges recovered from bus registrations (caller ->
+	//    concrete handler), replacing the over-approximation CHA would draw.
+	if busInfo != nil {
+		seenD := map[string]bool{}
+		for _, d := range busInfo.Dispatches {
+			if !b.included[d.Caller] {
+				continue
+			}
+			from := b.id(d.Caller)
+			for _, h := range d.Handlers {
+				if !b.included[h] {
+					continue
+				}
+				to := b.id(h)
+				key := from + "|" + to
+				if from == to || seenD[key] {
+					continue
+				}
+				seenD[key] = true
+				g.Edges = append(g.Edges, graph.Edge{From: from, To: to, Kind: graph.EdgeDispatch})
+			}
+		}
+	}
+
 	pruneIsolatedFuncs(&g)
 	sortGraph(&g)
 	return g
@@ -131,7 +250,7 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 
 // pruneIsolatedFuncs drops function nodes that have no incident edge (e.g.
 // constructors wired only from main), keeping the graph focused on the flow.
-// Endpoint nodes are always kept.
+// Endpoint and port nodes are always kept.
 func pruneIsolatedFuncs(g *graph.Graph) {
 	deg := map[string]bool{}
 	for _, e := range g.Edges {
@@ -171,6 +290,9 @@ func (b *builder) reachableIncluded(fn *ssa.Function) map[*ssa.Function]bool {
 			}
 			visited[callee] = true
 			switch {
+			case b.barrier[callee]:
+				// bus method: stop so CHA's over-approx fan-out through the bus
+				// is dropped (precise dispatch edges are added separately).
 			case b.included[callee]:
 				out[callee] = true // edge target; don't recurse past it
 			case b.res.Funcs[callee] != nil:
@@ -182,6 +304,18 @@ func (b *builder) reachableIncluded(fn *ssa.Function) map[*ssa.Function]bool {
 	}
 	walk(fn)
 	return out
+}
+
+// classify strips the module path prefix before classifying, so a package is
+// classified by its position within the module — never by the module name
+// itself (which may, e.g., end in "grpc" and falsely match a layer keyword).
+func (b *builder) classify(pkgPath string) (layer, module string) {
+	rel := pkgPath
+	if b.res.Module != "" {
+		rel = strings.TrimPrefix(rel, b.res.Module)
+		rel = strings.TrimPrefix(rel, "/")
+	}
+	return b.cl.Classify(rel)
 }
 
 func (b *builder) id(fn *ssa.Function) string {

@@ -9,7 +9,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/eularix/archview"
+	"github.com/eularixs/archview"
 
 	bilpg "archview-example-hexagonal/internal/billing/adapter/postgres"
 	bilrest "archview-example-hexagonal/internal/billing/adapter/rest"
@@ -38,9 +38,10 @@ func main() {
 	mux.HandleFunc("POST /billing/invoices", billingH.CreateInvoice)
 
 	av, err := archview.New(archview.Options{
-		Root:     ".",
-		BasePath: "/graph",
-		Editor:   "vscode",
+		Root:      ".",
+		BasePath:  "/graph",
+		Editor:    "vscode",
+		ShowPorts: true, // surface outbound ports: usecase -> port <- adapter
 	})
 	if err != nil {
 		log.Fatal(err)

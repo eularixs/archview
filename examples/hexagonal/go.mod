@@ -2,7 +2,7 @@ module archview-example-hexagonal
 
 go 1.25.5
 
-require github.com/eularix/archview v0.0.0
+require github.com/eularixs/archview v0.0.0
 
 require (
 	golang.org/x/mod v0.37.0 // indirect
@@ -10,4 +10,4 @@ require (
 	golang.org/x/tools v0.46.0 // indirect
 )
 
-replace github.com/eularix/archview => ../..
+replace github.com/eularixs/archview => ../..

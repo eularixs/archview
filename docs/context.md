@@ -22,7 +22,7 @@ source → go/packages (AST+types) → callgraph (CHA) → classify layer
 | Topik | Keputusan |
 |---|---|
 | Nama | **archview** (folder masih `gostruct/`) |
-| Module path | `github.com/eularix/archview` (Eularix identity) |
+| Module path | `github.com/eularixs/archview` (Eularix identity) |
 | Run mode v0.1 | dev-live |
 | Framework v0.1 | net/http + gin |
 | Pattern v0.1 | modular MVC + hexagonal |

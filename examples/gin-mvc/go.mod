@@ -3,7 +3,7 @@ module archview-example-gin-mvc
 go 1.25.5
 
 require (
-	github.com/eularix/archview v0.0.0
+	github.com/eularixs/archview v0.0.0
 	github.com/gin-gonic/gin v1.10.0
 )
 
@@ -39,4 +39,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/eularix/archview => ../..
+replace github.com/eularixs/archview => ../..
