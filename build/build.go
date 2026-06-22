@@ -38,6 +38,13 @@ type Options struct {
 	// classified layer) as nodes. When false (default) they are collapsed
 	// through, so a caller still links to what the helper reaches.
 	ShowHelpers bool
+	// AutoLayer infers a layer for functions reached from an endpoint whose
+	// package name doesn't match a layer keyword: the entry is a controller, a
+	// function that calls further into the app is a service, and a sink (one
+	// that only reaches external/leaf code) is a repository. This makes archview
+	// work on any layout without per-project keyword config. Keyword
+	// classification still wins where it applies.
+	AutoLayer bool
 }
 
 type builder struct {
@@ -47,6 +54,7 @@ type builder struct {
 	showPorts   bool
 	detectBuses bool
 	showHelpers bool
+	autoLayer   bool
 
 	included map[*ssa.Function]bool
 	layerOf  map[*ssa.Function]string
@@ -73,6 +81,7 @@ func Graph(res *analyzer.Result, routes []route.Route, cl *classify.Classifier, 
 		showPorts:   opts.ShowPorts,
 		detectBuses: opts.DetectBuses,
 		showHelpers: opts.ShowHelpers,
+		autoLayer:   opts.AutoLayer,
 		included:    map[*ssa.Function]bool{},
 		layerOf:     map[*ssa.Function]string{},
 		moduleOf:    map[*ssa.Function]string{},
@@ -98,6 +107,13 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 		if f := b.res.FuncFor(r.Handler); f != nil {
 			b.included[f.SSA] = true
 		}
+	}
+
+	// 2a. Auto-layer: include functions reachable from endpoints whose package
+	//     isn't keyword-classified, inferring their layer from call-chain role
+	//     (entry=controller, calls-onward=service, sink=repository).
+	if b.autoLayer {
+		b.inferLayers(routes)
 	}
 
 	// 2b. Detect mediator buses. Bus methods become call-graph barriers so the
@@ -316,6 +332,83 @@ func (b *builder) reachableIncluded(fn *ssa.Function) map[*ssa.Function]bool {
 	}
 	walk(fn)
 	return out
+}
+
+// inferLayers walks the call graph from endpoint handlers (and keyword
+// controllers), including every project function reached and assigning a layer
+// to those the keyword classifier left as "other": the entry is a controller, a
+// function that calls onward into the app is a service, and a sink is a
+// repository. Keyword-classified layers are left untouched.
+func (b *builder) inferLayers(routes []route.Route) {
+	entries := map[*ssa.Function]bool{}
+	for fn := range b.included {
+		if b.layerOf[fn] == graph.LayerController {
+			entries[fn] = true
+		}
+	}
+	for _, r := range routes {
+		if f := b.res.FuncFor(r.Handler); f != nil {
+			entries[f.SSA] = true
+		}
+	}
+
+	// BFS over project functions reachable from the entries.
+	reachable := map[*ssa.Function]bool{}
+	var queue []*ssa.Function
+	for fn := range entries {
+		reachable[fn] = true
+		queue = append(queue, fn)
+	}
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		cgn := b.res.CallGraph.Nodes[n]
+		if cgn == nil {
+			continue
+		}
+		for _, e := range cgn.Out {
+			c := e.Callee.Func
+			if c == nil || reachable[c] || b.res.Funcs[c] == nil {
+				continue
+			}
+			reachable[c] = true
+			queue = append(queue, c)
+		}
+	}
+
+	cand := func(fn *ssa.Function) bool {
+		return reachable[fn] && (b.showHelpers || !trivialHelper(b.res.Funcs[fn]))
+	}
+
+	for fn := range reachable {
+		if !cand(fn) {
+			continue
+		}
+		b.included[fn] = true
+		if layeredLayers[b.layerOf[fn]] {
+			continue // keyword classification wins
+		}
+		if entries[fn] {
+			b.layerOf[fn] = graph.LayerController
+			continue
+		}
+		// A function that calls onward to another included candidate is an
+		// intermediate (service); a sink is a repository.
+		intermediate := false
+		if cgn := b.res.CallGraph.Nodes[fn]; cgn != nil {
+			for _, e := range cgn.Out {
+				if c := e.Callee.Func; c != nil && c != fn && cand(c) {
+					intermediate = true
+					break
+				}
+			}
+		}
+		if intermediate {
+			b.layerOf[fn] = graph.LayerService
+		} else {
+			b.layerOf[fn] = graph.LayerRepository
+		}
+	}
 }
 
 // trivialHelper reports whether f is an unexported free function — a package

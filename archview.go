@@ -56,6 +56,11 @@ type Options struct {
 	// classified layer) as graph nodes. By default they are hidden and collapsed
 	// through, so the flow stays connected without the clutter.
 	ShowHelpers bool
+	// AutoLayer infers layers for endpoint-reachable functions whose package
+	// name doesn't match a layer keyword, so archview works on any layout
+	// (e.g. core/, adapter/postgresql, interface/) without keyword config.
+	// Keyword classification still takes precedence where it applies.
+	AutoLayer bool
 }
 
 // Server holds the analyzed graph and serves the UI.
@@ -91,6 +96,7 @@ func New(opts Options) (*Server, error) {
 		ShowPorts:   opts.ShowPorts,
 		DetectBuses: opts.DetectBuses,
 		ShowHelpers: opts.ShowHelpers,
+		AutoLayer:   opts.AutoLayer,
 	})
 
 	h, err := web.New(opts.BasePath, g)

@@ -17,12 +17,12 @@ import (
 // it. Matched case-insensitively, either as a whole path segment or as a suffix
 // of one (e.g. "user_service" -> service, module "user").
 var layerKeywords = map[string][]string{
-	// Inbound / driving side: MVC controllers + hexagonal transport adapters.
-	graph.LayerController: {"controller", "controllers", "handler", "handlers", "delivery", "rest", "transport", "grpc", "graphql", "web"},
-	// Application core: MVC services + hexagonal use cases.
-	graph.LayerService: {"service", "services", "usecase", "usecases", "use_case", "interactor", "interactors", "application", "logic"},
+	// Inbound / driving side: MVC controllers + hexagonal transport/interface adapters.
+	graph.LayerController: {"controller", "controllers", "handler", "handlers", "delivery", "rest", "transport", "grpc", "graphql", "web", "interface", "interfaces"},
+	// Application core: MVC services + hexagonal use cases / clean-arch core.
+	graph.LayerService: {"service", "services", "usecase", "usecases", "use_case", "interactor", "interactors", "application", "logic", "core"},
 	// Outbound / driven side: MVC repositories + hexagonal persistence/gateway adapters.
-	graph.LayerRepository: {"repository", "repositories", "repo", "repos", "store", "stores", "dao", "persistence", "gateway", "postgres", "mysql", "mongo", "mongodb", "sqlite"},
+	graph.LayerRepository: {"repository", "repositories", "repo", "repos", "store", "stores", "dao", "persistence", "gateway", "postgres", "postgresql", "mysql", "mongo", "mongodb", "sqlite", "supabase"},
 }
 
 // generic path segments that are containers, not module names. Includes
