@@ -31,7 +31,7 @@ av, err := archview.New(archview.Options{
     Editor:      "vscode", // click-to-source: "vscode" or "cursor"
     ShowPorts:   true,     // surface hexagonal outbound ports (default off)
     DetectBuses: true,     // recover command/query/event routing (default off)
-    AutoLayer:   true,     // infer layers from the call chain, any naming (default off)
+    // AutoLayer is ON by default; set DisableAutoLayer: true for keyword-only.
 })
 if err != nil {
     log.Fatal(err)
@@ -90,10 +90,9 @@ module name that happens to contain a keyword never mis-classifies. Extend via
 
 Keyword classification needs conventional package names. Real codebases —
 especially microservices, each with its own conventions — often don't follow
-them. With `AutoLayer: true`, archview ignores naming entirely and reads the
-**call chain** instead: starting from each detected endpoint it walks the graph,
-includes every function actually reached, and infers a layer from each one's
-role in the chain:
+them. So archview reads the **call chain** instead, **on by default**: starting
+from each detected endpoint it walks the graph, includes every function actually
+reached, and infers a layer from each one's role in the chain:
 
 - the **entry** (the endpoint's handler) → controller,
 - a function that **calls onward** into the app → service,
@@ -101,8 +100,10 @@ role in the chain:
 
 So a service shows up because something *flows through it*, not because a folder
 is named `service`. The flow is always readable — even with no layer
-conventions at all. Keyword classification still wins where it applies, so you
-can mix both.
+conventions at all, and the same analysis works across microservices that each
+name things differently. Keyword classification still takes precedence where it
+applies, so well-named projects are unchanged. Set `DisableAutoLayer: true` for
+the curated keyword-only view.
 
 ## Frameworks
 

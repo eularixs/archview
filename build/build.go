@@ -109,20 +109,21 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 		}
 	}
 
-	// 2a. Auto-layer: include functions reachable from endpoints whose package
-	//     isn't keyword-classified, inferring their layer from call-chain role
-	//     (entry=controller, calls-onward=service, sink=repository).
-	if b.autoLayer {
-		b.inferLayers(routes)
-	}
-
-	// 2b. Detect mediator buses. Bus methods become call-graph barriers so the
+	// 2a. Detect mediator buses. Bus methods become call-graph barriers so the
 	//     over-approximated edges CHA draws through the bus are dropped; precise
 	//     dispatch edges are added in step 8.
 	var busInfo *analyzer.BusInfo
 	if b.detectBuses {
 		busInfo = b.res.Buses()
 		b.barrier = busInfo.BusMethods
+	}
+
+	// 2b. Auto-layer: include functions reachable from endpoints whose package
+	//     isn't keyword-classified, inferring their layer from call-chain role
+	//     (entry=controller, calls-onward=service, sink=repository). Runs after
+	//     bus detection so it respects the bus barrier.
+	if b.autoLayer {
+		b.inferLayers(routes)
 	}
 
 	// 3. Resolve outbound ports and the direct call edges they replace.
@@ -368,8 +369,8 @@ func (b *builder) inferLayers(routes []route.Route) {
 		}
 		for _, e := range cgn.Out {
 			c := e.Callee.Func
-			if c == nil || reachable[c] || b.res.Funcs[c] == nil {
-				continue
+			if c == nil || reachable[c] || b.res.Funcs[c] == nil || b.barrier[c] {
+				continue // skip visited, non-project, and bus-barrier funcs
 			}
 			reachable[c] = true
 			queue = append(queue, c)
