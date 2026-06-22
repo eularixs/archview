@@ -7,9 +7,11 @@ package analyzer
 
 import (
 	"fmt"
+	"go/ast"
 	"go/token"
 	"go/types"
 	"path/filepath"
+	"regexp"
 
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
@@ -17,6 +19,22 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 )
+
+// genMarker matches the standard Go "generated file" header. Functions in such
+// files (protoc, sqlc, mockgen, ent, …) are skipped so generated boilerplate
+// doesn't clutter the graph.
+var genMarker = regexp.MustCompile(`^// Code generated .* DO NOT EDIT\.$`)
+
+func isGeneratedFile(f *ast.File) bool {
+	for _, cg := range f.Comments {
+		for _, c := range cg.List {
+			if genMarker.MatchString(c.Text) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // Func is a project function/method discovered during analysis.
 type Func struct {
@@ -86,6 +104,20 @@ func Load(dir string) (*Result, error) {
 	cg := cha.CallGraph(prog)
 	cg.DeleteSyntheticNodes()
 
+	// Generated source files (their functions are excluded below).
+	generated := map[string]bool{}
+	for _, p := range pkgs {
+		for _, f := range p.Syntax {
+			if isGeneratedFile(f) {
+				abs := prog.Fset.Position(f.Pos()).Filename
+				if a, err := filepath.Abs(abs); err == nil {
+					abs = a
+				}
+				generated[abs] = true
+			}
+		}
+	}
+
 	res := &Result{
 		Module:    module,
 		Fset:      prog.Fset,
@@ -100,7 +132,11 @@ func Load(dir string) (*Result, error) {
 		if !res.owns(fn) {
 			continue
 		}
-		res.Funcs[fn] = res.toFunc(fn)
+		f := res.toFunc(fn)
+		if generated[f.File] {
+			continue // skip generated boilerplate (protoc, sqlc, …)
+		}
+		res.Funcs[fn] = f
 	}
 	return res, nil
 }
