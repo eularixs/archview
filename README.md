@@ -9,8 +9,9 @@ Framework-agnostic (net/http, gin, echo, gRPC, GraphQL) and pattern-aware
 (modular MVC, hexagonal ports & adapters, CQRS / event buses): the arrows
 follow the call graph of whatever layout you actually use.
 
-> Status: **v0.2** — dev-live mode; net/http + gin + echo + gRPC + GraphQL;
-> modular MVC, hexagonal (outbound ports), and CQRS/mediator (bus detection).
+> Status: **v0.3** — dev-live mode; net/http + gin + echo + gRPC + GraphQL;
+> modular MVC, hexagonal (outbound ports), and CQRS/mediator (bus detection);
+> chain-based auto-layer for naming-agnostic analysis.
 > See [`docs/`](docs/) for the PRD, plan and roadmap.
 
 ## Install
@@ -30,6 +31,7 @@ av, err := archview.New(archview.Options{
     Editor:      "vscode", // click-to-source: "vscode" or "cursor"
     ShowPorts:   true,     // surface hexagonal outbound ports (default off)
     DetectBuses: true,     // recover command/query/event routing (default off)
+    AutoLayer:   true,     // infer layers from the call chain, any naming (default off)
 })
 if err != nil {
     log.Fatal(err)
@@ -83,6 +85,24 @@ module `user`). Hexagonal structural dirs (`adapter`, `port`, `inbound`,
 bounded-context name. Classification is relative to your module path, so a
 module name that happens to contain a keyword never mis-classifies. Extend via
 `Options.Classify`.
+
+## Auto-layer (naming-agnostic)
+
+Keyword classification needs conventional package names. Real codebases —
+especially microservices, each with its own conventions — often don't follow
+them. With `AutoLayer: true`, archview ignores naming entirely and reads the
+**call chain** instead: starting from each detected endpoint it walks the graph,
+includes every function actually reached, and infers a layer from each one's
+role in the chain:
+
+- the **entry** (the endpoint's handler) → controller,
+- a function that **calls onward** into the app → service,
+- a **sink** (one that only reaches external/leaf code) → repository.
+
+So a service shows up because something *flows through it*, not because a folder
+is named `service`. The flow is always readable — even with no layer
+conventions at all. Keyword classification still wins where it applies, so you
+can mix both.
 
 ## Frameworks
 
