@@ -65,6 +65,10 @@ func New(cfg *Config) *Classifier {
 
 // Classify returns the layer and module for an import path. Layer falls back to
 // graph.LayerOther when nothing matches; module is "" when undeterminable.
+//
+// The module is the bounded-context name. For feature-first layouts
+// (user/service) it is the segment before the layer keyword; for layer-first
+// layouts (core/user, interface/user, handlers/user) it is the segment after.
 func (c *Classifier) Classify(pkgPath string) (layer, module string) {
 	segs := strings.Split(pkgPath, "/")
 	// Search from the most specific (tail) segment backwards.
@@ -74,7 +78,12 @@ func (c *Classifier) Classify(pkgPath string) (layer, module string) {
 			if base != "" {
 				return l, base
 			}
-			return l, moduleFromPrev(segs, i)
+			// Prefer feature-first (module before the layer); fall back to
+			// layer-first (module after).
+			if m := moduleFromPrev(segs, i); m != "" {
+				return l, m
+			}
+			return l, moduleFromNext(segs, i)
 		}
 	}
 	return graph.LayerOther, moduleFromPrev(segs, len(segs))
@@ -102,6 +111,20 @@ func (c *Classifier) matchLayer(seg string) (layer, base string, ok bool) {
 // segment as the module name, or "" if none.
 func moduleFromPrev(segs []string, i int) string {
 	for j := i - 1; j >= 0; j-- {
+		s := strings.ToLower(segs[j])
+		if s == "" || generic[s] {
+			continue
+		}
+		return segs[j]
+	}
+	return ""
+}
+
+// moduleFromNext walks forward from index i, returning the first non-generic
+// segment as the module name, or "" if none. Used for layer-first layouts where
+// the feature follows the layer dir (e.g. core/user -> user).
+func moduleFromNext(segs []string, i int) string {
+	for j := i + 1; j < len(segs); j++ {
 		s := strings.ToLower(segs[j])
 		if s == "" || generic[s] {
 			continue
