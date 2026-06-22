@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { version } from '@/lib/shared';
 import {
   Layers,
   Webhook,
@@ -54,7 +55,7 @@ function Hero() {
               className="h-1.5 w-1.5 rounded-full"
               style={{ background: 'var(--av-service)' }}
             />
-            Go library · static analysis · v0.0.x beta
+            Go library · static analysis · {version}
           </span>
 
           <h1
