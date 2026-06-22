@@ -120,6 +120,7 @@
     <svg id="svg"><g id="viewport"><g id="content"></g></g></svg>
     <div class="toolbar" id="toolbar">
       <button data-act="fit">Fit</button>
+      <button data-act="reset" title="reset saved layout">Reset</button>
       <button data-act="expand">Expand all</button>
       <button data-act="collapse">Collapse all</button>
       <span class="sep"></span>
@@ -175,6 +176,7 @@ async function main() {
     `${G.nodes.length} nodes · ${G.edges.length} edges` + (vcount ? ` · ⚠ ${vcount} issue${vcount > 1 ? "s" : ""}` : "");
   if (vcount) document.getElementById("counts").style.color = "#F87171";
   for (const n of G.nodes) nodeById[n.id] = n;
+  loadLayout();
   if (!G.nodes.length) { document.getElementById("empty").classList.add("show"); return; }
   modulesAll = [...new Set(G.nodes.map(moduleName))].sort();
   setupControls();
@@ -431,7 +433,34 @@ function wire(g1, id) {
   nodeEls[id] = g1;
 }
 
-function toggle(m) { collapsed.has(m) ? collapsed.delete(m) : collapsed.add(m); render(); }
+function toggle(m) { collapsed.has(m) ? collapsed.delete(m) : collapsed.add(m); saveLayout(); render(); }
+
+// --- layout persistence (localStorage, keyed per graph) ---
+function storageKey() { return "archview:layout:" + BASE + ":" + ((G && G.module) || ""); }
+function saveLayout() {
+  try {
+    localStorage.setItem(storageKey(), JSON.stringify({
+      nodeDelta, laneOffset, collapsed: [...collapsed],
+    }));
+  } catch (e) { /* storage unavailable */ }
+}
+function loadLayout() {
+  try {
+    const raw = localStorage.getItem(storageKey());
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    Object.assign(nodeDelta, s.nodeDelta || {});
+    Object.assign(laneOffset, s.laneOffset || {});
+    (s.collapsed || []).forEach(m => collapsed.add(m));
+  } catch (e) { /* ignore */ }
+}
+function resetLayout() {
+  for (const k in nodeDelta) delete nodeDelta[k];
+  for (const k in laneOffset) delete laneOffset[k];
+  collapsed.clear();
+  try { localStorage.removeItem(storageKey()); } catch (e) {}
+  render(); fitView();
+}
 
 function attachDrag(g1, id) {
   g1.addEventListener("mousedown", e => {
@@ -449,7 +478,7 @@ function attachDrag(g1, id) {
     const onUp = () => {
       window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp);
       g1.classList.remove("dragging");
-      if (!moved) onClick(id);
+      if (!moved) onClick(id); else saveLayout();
     };
     window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
   });
@@ -471,7 +500,7 @@ function attachLaneDrag(g, module) {
     const onUp = () => {
       window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp);
       g.classList.remove("dragging");
-      if (!moved) toggle(module);
+      if (!moved) toggle(module); else saveLayout();
     };
     window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
   });
@@ -547,8 +576,9 @@ function setupControls() {
   document.getElementById("toolbar").addEventListener("click", e => {
     const act = e.target.dataset.act; if (!act) return;
     if (act === "fit") fitView();
-    else if (act === "expand") { collapsed.clear(); render(); fitView(); }
-    else if (act === "collapse") { modulesAll.forEach(m => collapsed.add(m)); render(); fitView(); }
+    else if (act === "reset") resetLayout();
+    else if (act === "expand") { collapsed.clear(); saveLayout(); render(); fitView(); }
+    else if (act === "collapse") { modulesAll.forEach(m => collapsed.add(m)); saveLayout(); render(); fitView(); }
     else if (act === "zoomin") zoomBy(0.83);
     else if (act === "zoomout") zoomBy(1.2);
   });
