@@ -207,12 +207,18 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 		}
 	}
 
-	// 6. Endpoint nodes + route edges to their handler.
+	// 6. Endpoint nodes + route edges to their handler. A handler that performs
+	//    a WebSocket upgrade is labeled "WS".
+	wsUpgraders := b.res.WSUpgraders()
 	for i, r := range routes {
 		epID := fmt.Sprintf("ep:%d:%s:%s", i, r.Method, r.Path)
 		module := ""
+		method := r.Method
 		if f := b.res.FuncFor(r.Handler); f != nil {
 			module = b.moduleOf[f.SSA]
+			if wsUpgraders[f.SSA] {
+				method = "WS"
+			}
 		}
 		label := r.Path
 		if label == "" {
@@ -224,7 +230,7 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 			Label:  label,
 			Layer:  graph.LayerEndpoint,
 			Module: module,
-			Method: r.Method,
+			Method: method,
 			Path:   r.Path,
 		})
 		if f := b.res.FuncFor(r.Handler); f != nil && b.included[f.SSA] {
