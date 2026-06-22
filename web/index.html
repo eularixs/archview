@@ -216,12 +216,19 @@ function computeLayout() {
       pos[e.id] = { x: x[c], y: nodeTop + i * (NODEH + VGAP), node: e.node, box: e.box, module: m };
     });
     const laneH = LANE_HEAD + rows * (NODEH + VGAP) - VGAP + 16;
-    // Lane width fits only the columns this module actually uses, so a module
-    // with just endpoint + controller gets a short lane instead of full width.
-    let maxColX = LEFT + COLPAD + NODEW;
-    for (const c in colGroups) maxColX = Math.max(maxColX, x[c] + NODEW);
-    const laneW = maxColX + 16 - (LEFT - 12);
-    lanes.push({ module: m, y, h: laneH, w: laneW, collapsed: isCol, count: laneNodes.filter(n => n.kind !== "endpoint").length });
+    // Lane box wraps only the columns this module actually uses — both left and
+    // right — so a module living in the right-hand columns (e.g. an adapter that
+    // only has repository nodes) gets a compact box there instead of a
+    // full-width band starting from the left.
+    let minColX = Infinity, maxColX = -Infinity;
+    for (const c in colGroups) {
+      minColX = Math.min(minColX, x[c]);
+      maxColX = Math.max(maxColX, x[c] + NODEW);
+    }
+    if (!isFinite(minColX)) { minColX = LEFT + COLPAD; maxColX = minColX + NODEW; }
+    const laneX = minColX - 14;
+    const laneW = maxColX + 14 - laneX;
+    lanes.push({ module: m, y, h: laneH, x: laneX, w: laneW, collapsed: isCol, count: laneNodes.filter(n => n.kind !== "endpoint").length });
     y += laneH + LANE_GAP;
   }
   const W = LEFT + COLPAD + cols.length * COLW + 24, H = y + 24;
@@ -325,11 +332,12 @@ function render() {
   const laneLayer = el("g"); content.appendChild(laneLayer);
   L.lanes.forEach((lane) => {
     const g = el("g", { class: "lane", "data-module": lane.module });
-    g.appendChild(el("rect", { class: "lane-bg", x: LEFT - 12, y: lane.y, width: lane.w || (L.W - LEFT - 4), height: lane.h, rx: 18 }));
-    g.appendChild(el("text", { class: "grip", x: LEFT, y: lane.y + 26 }, [txt("⠿")]));
-    g.appendChild(el("text", { class: "tri", x: LEFT + 16, y: lane.y + 25 }, [txt(lane.collapsed ? "▶" : "▼")]));
-    g.appendChild(el("text", { class: "lname", x: LEFT + 30, y: lane.y + 27 }, [txt(lane.module)]));
-    g.appendChild(el("text", { class: "cnt", x: LEFT + 30 + lane.module.length * 8 + 12, y: lane.y + 27 },
+    const lx = lane.x != null ? lane.x : LEFT - 12;
+    g.appendChild(el("rect", { class: "lane-bg", x: lx, y: lane.y, width: lane.w || (L.W - LEFT - 4), height: lane.h, rx: 18 }));
+    g.appendChild(el("text", { class: "grip", x: lx + 12, y: lane.y + 26 }, [txt("⠿")]));
+    g.appendChild(el("text", { class: "tri", x: lx + 28, y: lane.y + 25 }, [txt(lane.collapsed ? "▶" : "▼")]));
+    g.appendChild(el("text", { class: "lname", x: lx + 42, y: lane.y + 27 }, [txt(lane.module)]));
+    g.appendChild(el("text", { class: "cnt", x: lx + 42 + lane.module.length * 8 + 12, y: lane.y + 27 },
       [txt(`${lane.count} fn${lane.collapsed ? " · collapsed" : ""}`)]));
     attachLaneDrag(g, lane.module);
     laneEls[lane.module] = g;
