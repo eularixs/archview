@@ -8,10 +8,10 @@ graph of your backend. Mount it in `main.go`, open `/graph` in a browser, and
 watch your endpoints flow through **controller → service → repository** —
 generated automatically from your source, with no annotations.
 
-It is framework-agnostic (net/http, gin, gRPC) and pattern-aware (modular MVC,
-hexagonal ports & adapters, CQRS / event buses): the arrows follow the call
-graph of whatever layout you actually use. Click any node to jump straight to
-its definition in your editor.
+It is framework-agnostic (net/http, gin, echo, gRPC, GraphQL) and pattern-aware
+(modular MVC, hexagonal ports & adapters, CQRS / event buses): the arrows follow
+the call graph of whatever layout you actually use. Click any node to jump
+straight to its definition in your editor.
 
 <Callout title="How is this different from go-callvis?">
   archview builds on the same idea (a static call graph) but adds three layers

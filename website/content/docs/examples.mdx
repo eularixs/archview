@@ -54,6 +54,27 @@ go -C examples/grpc run -buildvcs=false .
 # open http://localhost:8096/graph
 ```
 
+## graphql
+
+gqlgen-style resolvers in clean architecture. Query and mutation fields are
+detected as endpoints and flow through the resolver → service → repository.
+
+```sh
+go -C examples/graphql run -buildvcs=false .
+# open http://localhost:8097/graph
+```
+
+## echo
+
+Modular MVC over **echo** with an `/api` group, showing how archview is used
+with echo: routes (incl. group prefixes) are detected, and archview is served on
+its own port — the cleanest way to mount it with any framework.
+
+```sh
+go -C examples/echo run -buildvcs=false .
+# open http://localhost:9098/graph
+```
+
 <Callout>
   Each example is a separate Go module with a <code>replace</code> directive
   pointing at the repo root, so they always build against your local copy.

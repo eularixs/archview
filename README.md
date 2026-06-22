@@ -5,12 +5,12 @@ Live architecture flow graph for Go backends. Mount it in `main.go`, open
 controller → service → repository — generated automatically from your source,
 no annotations. Click any node to jump to its definition in your editor.
 
-Framework-agnostic (net/http, gin, gRPC) and pattern-aware (modular MVC,
-hexagonal ports & adapters, CQRS / event buses): the arrows follow the call
-graph of whatever layout you actually use.
+Framework-agnostic (net/http, gin, echo, gRPC, GraphQL) and pattern-aware
+(modular MVC, hexagonal ports & adapters, CQRS / event buses): the arrows
+follow the call graph of whatever layout you actually use.
 
-> Status: **v0.1+** — dev-live mode; net/http + gin + gRPC; modular MVC,
-> hexagonal (outbound ports), and CQRS/mediator (bus detection).
+> Status: **v0.2** — dev-live mode; net/http + gin + echo + gRPC + GraphQL;
+> modular MVC, hexagonal (outbound ports), and CQRS/mediator (bus detection).
 > See [`docs/`](docs/) for the PRD, plan and roadmap.
 
 ## Install
@@ -92,11 +92,14 @@ its framework.
 | Framework | Detected |
 |-----------|----------|
 | net/http  | `mux.HandleFunc("GET /path", h)` (Go 1.22 method patterns) |
-| gin       | `r.GET/POST/...`, `Handle`, `Any` on `*gin.Engine` / `*gin.RouterGroup` |
+| gin       | `r.GET/POST/...`, `Handle`, `Any` on `*gin.Engine` / `*gin.RouterGroup` (+ group prefixes) |
+| echo      | `e.GET/POST/...`, `Any` on `*echo.Echo` / `*echo.Group` (+ group prefixes) |
 | gRPC      | `Register<Svc>Server(reg, impl)` — each RPC method becomes an endpoint |
+| GraphQL   | gqlgen `Query/Mutation/SubscriptionResolver` — each field becomes an endpoint |
 
-gRPC detection is structural (the `Register…Server` shape), so it works with
-real `google.golang.org/grpc` as-is. Add a framework by implementing the
+gRPC and GraphQL detection is structural (the generated shapes), so it works
+with real `google.golang.org/grpc` / gqlgen as-is. gin and echo join
+`Group("/api")` prefixes onto routes. Add a framework by implementing the
 `archview.Extractor` interface and passing it in `Options.Extractors`.
 
 ## Outbound ports (hexagonal)
@@ -141,6 +144,12 @@ go -C examples/cqrs run -buildvcs=false .         # http://localhost:8095/graph
 
 # gRPC in clean architecture
 go -C examples/grpc run -buildvcs=false .         # http://localhost:8096/graph
+
+# GraphQL (gqlgen-style resolvers)
+go -C examples/graphql run -buildvcs=false .      # http://localhost:8097/graph
+
+# echo + /api group (archview served on :9098)
+go -C examples/echo run -buildvcs=false .         # http://localhost:9098/graph
 ```
 
 ## Limitations
@@ -148,16 +157,16 @@ go -C examples/grpc run -buildvcs=false .         # http://localhost:8096/graph
 - Concrete calls + single-implementation interfaces (CHA). Multiple
   implementations of one interface over-approximate the edges — unless a port
   or bus mediates them (`ShowPorts` / `DetectBuses`).
-- Route paths are the literal registered path; group/router prefixes are not
-  joined yet (`/users`, not `/api/users`).
-- net/http + gin + gRPC only; dev-live only (no baked artifact).
+- gin/echo group prefixes are joined; net/http `StripPrefix` and chi `Route`
+  nesting are not yet.
+- net/http + gin + echo + gRPC + GraphQL; dev-live only (no baked artifact).
 - Inline closure handlers create an endpoint node but no handler link.
-- Free-function helpers in a classified layer show as nodes (no
-  trivial-helper filter yet).
+- Unexported free-function helpers are collapsed through by default
+  (`ShowHelpers` to keep them).
 
 ## Roadmap
 
-outbound/external call detection (DB/HTTP/queue) · layer-violation linter ·
-GraphQL & WebSocket extractors · echo/fiber/chi adapters · trivial-helper
-filter · `archview.yaml` config · prod-baked (`go:generate` + `go:embed`) ·
-JetBrains editor · search/filter. See [`docs/prd.md`](docs/prd.md).
+layer-violation linter · outbound/external call detection (DB/HTTP/queue) ·
+WebSocket extractor · fiber/chi adapters · `archview.yaml` config · prod-baked
+(`go:generate` + `go:embed`) · JetBrains editor · search/filter. See
+[`docs/prd.md`](docs/prd.md).

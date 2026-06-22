@@ -4,9 +4,9 @@ description: Route extraction per framework, and how to add your own.
 ---
 
 Each framework registers routes differently, so endpoint detection is delegated
-to per-framework **extractors**. The built-ins are gin, net/http and gRPC; each
-runs automatically (an extractor only fires on a package that uses its
-framework).
+to per-framework **extractors**. The built-ins are net/http, gin, echo, gRPC and
+GraphQL; each runs automatically (an extractor only fires on a package that uses
+its framework).
 
 ## net/http
 
@@ -27,6 +27,33 @@ r := gin.Default()
 api := r.Group("/api")
 api.GET("/users", userCtl.List)   // handler resolves to (*UserController).List
 ```
+
+## echo
+
+Detects `GET/POST/...` and `Any` on `*echo.Echo` / `*echo.Group`. The handler is
+the argument right after the path; `Group("/api")` prefixes are joined onto the
+route. Works with echo v3 and v4.
+
+```go
+e := echo.New()
+api := e.Group("/api")
+api.GET("/users", userCtl.List)   // endpoint /api/users
+```
+
+## GraphQL
+
+Detects gqlgen-style resolvers: an interface named
+`Query`/`Mutation`/`SubscriptionResolver` implemented by a project type. Each
+field becomes an endpoint bound to the resolver method.
+
+```go
+type QueryResolver interface {
+    Order(ctx context.Context, id string) (*Order, error)   // endpoint /Query/order
+}
+```
+
+Structural detection — no import required, so it works with real gqlgen output.
+Only root resolvers for now; nested field resolvers are on the roadmap.
 
 ## gRPC
 
