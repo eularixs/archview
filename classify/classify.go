@@ -78,12 +78,7 @@ func (c *Classifier) Classify(pkgPath string) (layer, module string) {
 			if base != "" {
 				return l, base
 			}
-			// Prefer feature-first (module before the layer); fall back to
-			// layer-first (module after).
-			if m := moduleFromPrev(segs, i); m != "" {
-				return l, m
-			}
-			return l, moduleFromNext(segs, i)
+			return l, moduleFor(segs, i)
 		}
 	}
 	return graph.LayerOther, moduleFromPrev(segs, len(segs))
@@ -105,6 +100,29 @@ func (c *Classifier) matchLayer(seg string) (layer, base string, ok bool) {
 		}
 	}
 	return "", "", false
+}
+
+// moduleFor derives the module (bounded-context lane) for a layer matched at
+// index i:
+//  1. feature-first — the non-generic segment before the layer (user/service),
+//  2. layer-first — the non-generic segment after it (core/user),
+//  3. otherwise the immediate container segment, even if generic, so an
+//     adapter-only layout (adapter/postgresql) groups under "adapter" rather
+//     than collapsing into the root lane.
+func moduleFor(segs []string, i int) string {
+	if m := moduleFromPrev(segs, i); m != "" {
+		return m
+	}
+	if m := moduleFromNext(segs, i); m != "" {
+		return m
+	}
+	if i-1 >= 0 {
+		return segs[i-1]
+	}
+	if i+1 < len(segs) {
+		return segs[i+1]
+	}
+	return ""
 }
 
 // moduleFromPrev walks back from index i, returning the first non-generic

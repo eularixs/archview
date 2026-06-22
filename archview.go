@@ -16,6 +16,7 @@ package archview
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/eularixs/archview/analyzer"
 	"github.com/eularixs/archview/build"
@@ -93,6 +94,7 @@ func New(opts Options) (*Server, error) {
 		return nil, err
 	}
 	routes := route.Extract(res.Pkgs, extractors)
+	routes = dropBasePathRoutes(routes, opts.BasePath)
 	cl := classify.New(opts.Classify)
 	g := build.Graph(res, routes, cl, build.Options{
 		Editor:      opts.Editor,
@@ -117,6 +119,23 @@ func (s *Server) Graph() graph.Graph { return s.graph }
 
 // Base returns the normalized mount path (e.g. "/graph").
 func (s *Server) Base() string { return s.handler.Base() }
+
+// dropBasePathRoutes removes archview's own UI routes (the mount path and
+// anything under it) so the graph doesn't show itself as an endpoint.
+func dropBasePathRoutes(routes []route.Route, basePath string) []route.Route {
+	base := "/" + strings.Trim(basePath, "/")
+	if base == "/" {
+		return routes
+	}
+	out := routes[:0]
+	for _, r := range routes {
+		if r.Path == base || strings.HasPrefix(r.Path, base+"/") {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
 
 // Mount registers the UI on a *http.ServeMux at the configured base path.
 func (s *Server) Mount(mux *http.ServeMux) {
