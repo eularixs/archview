@@ -112,6 +112,7 @@
       <span><i style="background:var(--service)"></i>service</span>
       <span><i style="background:var(--port)"></i>port</span>
       <span><i style="background:var(--repository)"></i>repository</span>
+      <span><i style="background:#F87171"></i>violation</span>
     </span>
     <span class="counts" id="counts"></span>
   </header>
@@ -169,7 +170,10 @@ async function main() {
   const res = await fetch(BASE + "/data");
   G = await res.json();
   document.getElementById("module").textContent = G.module || "";
-  document.getElementById("counts").textContent = `${G.nodes.length} nodes · ${G.edges.length} edges`;
+  const vcount = G.edges.filter(e => e.violation).length;
+  document.getElementById("counts").textContent =
+    `${G.nodes.length} nodes · ${G.edges.length} edges` + (vcount ? ` · ⚠ ${vcount} issue${vcount > 1 ? "s" : ""}` : "");
+  if (vcount) document.getElementById("counts").style.color = "#F87171";
   for (const n of G.nodes) nodeById[n.id] = n;
   if (!G.nodes.length) { document.getElementById("empty").classList.add("show"); return; }
   modulesAll = [...new Set(G.nodes.map(moduleName))].sort();
@@ -246,7 +250,7 @@ function remapEdges(pos) {
     const a = key(e.from), b = key(e.to);
     if (a === b || !pos[a] || !pos[b]) continue;
     const k = a + "|" + b;
-    if (!seen.has(k)) { seen.add(k); edges.push({ from: a, to: b, kind: e.kind }); }
+    if (!seen.has(k)) { seen.add(k); edges.push({ from: a, to: b, kind: e.kind, violation: e.violation }); }
   }
   return edges;
 }
@@ -351,13 +355,15 @@ function render() {
     const srcLayer = (nodeById[e.from] || {}).layer || "controller";
     const isImpl = e.kind === "implements";
     const isDisp = e.kind === "dispatch";
-    const color = isImpl ? COLOR.port : isDisp ? "#FBBF24" : (COLOR[srcLayer] || COLOR.other);
+    const viol = e.violation;
+    const color = viol ? "#F87171" : isImpl ? COLOR.port : isDisp ? "#FBBF24" : (COLOR[srcLayer] || COLOR.other);
     const dashed = isImpl || isDisp || srcLayer === "endpoint";
-    const line = el("path", { class: "edge", stroke: color, "stroke-width": 1.6, "stroke-opacity": 0.4,
+    const line = el("path", { class: "edge", stroke: color,
+      "stroke-width": viol ? 2.4 : 1.6, "stroke-opacity": viol ? 0.95 : 0.4,
       "stroke-dasharray": dashed ? "7 6" : "0", "stroke-linecap": "round" });
-    const arr = el("polygon", { class: "arrow", fill: color, "fill-opacity": 0.55 });
+    const arr = el("polygon", { class: "arrow", fill: color, "fill-opacity": viol ? 0.95 : 0.55 });
     edgeLayer.appendChild(line); edgeLayer.appendChild(arr);
-    edgeEls.push({ from: e.from, to: e.to, line, arr, color });
+    edgeEls.push({ from: e.from, to: e.to, line, arr, color, violation: viol });
     addAdj(e.from, e.to);
   }
 

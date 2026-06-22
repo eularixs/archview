@@ -65,6 +65,11 @@ type Options struct {
 	// still takes precedence where it applies. Set this to true for the curated
 	// keyword-only view.
 	DisableAutoLayer bool
+	// LintLayers flags architecture smells on call edges: a reverse dependency
+	// (e.g. repository -> service), a controller bypassing the service layer to
+	// reach a repository, and calls into another module's internals. Off by
+	// default; flagged edges are drawn in red.
+	LintLayers bool
 }
 
 // Server holds the analyzed graph and serves the UI.
@@ -102,6 +107,7 @@ func New(opts Options) (*Server, error) {
 		DetectBuses: opts.DetectBuses,
 		ShowHelpers: opts.ShowHelpers,
 		AutoLayer:   !opts.DisableAutoLayer,
+		LintLayers:  opts.LintLayers,
 	})
 
 	h, err := web.New(opts.BasePath, g)

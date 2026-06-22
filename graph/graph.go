@@ -56,11 +56,20 @@ type Node struct {
 	Path   string `json:"path,omitempty"`
 }
 
+// Edge violation kinds (set by the layer linter).
+const (
+	ViolationReverse = "reverse"      // calls backward toward the entry (e.g. repository -> service)
+	ViolationSkip    = "skip"         // controller -> repository, bypassing the service layer
+	ViolationCross   = "cross-module" // calls another module's internals
+)
+
 // Edge is a directed arrow between two nodes.
 type Edge struct {
 	From string `json:"from"`
 	To   string `json:"to"`
 	Kind string `json:"kind"`
+	// Violation, when non-empty, marks an architecture smell on a call edge.
+	Violation string `json:"violation,omitempty"`
 }
 
 // Graph is the whole picture.

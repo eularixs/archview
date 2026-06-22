@@ -45,6 +45,9 @@ type Options struct {
 	// work on any layout without per-project keyword config. Keyword
 	// classification still wins where it applies.
 	AutoLayer bool
+	// LintLayers flags architecture smells on call edges (reverse dependencies,
+	// controller bypassing the service layer, cross-module calls).
+	LintLayers bool
 }
 
 type builder struct {
@@ -55,6 +58,7 @@ type builder struct {
 	detectBuses bool
 	showHelpers bool
 	autoLayer   bool
+	lintLayers  bool
 
 	included map[*ssa.Function]bool
 	layerOf  map[*ssa.Function]string
@@ -82,6 +86,7 @@ func Graph(res *analyzer.Result, routes []route.Route, cl *classify.Classifier, 
 		detectBuses: opts.DetectBuses,
 		showHelpers: opts.ShowHelpers,
 		autoLayer:   opts.AutoLayer,
+		lintLayers:  opts.LintLayers,
 		included:    map[*ssa.Function]bool{},
 		layerOf:     map[*ssa.Function]string{},
 		moduleOf:    map[*ssa.Function]string{},
@@ -274,7 +279,51 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 
 	pruneIsolatedFuncs(&g)
 	sortGraph(&g)
+	if b.lintLayers {
+		lintLayers(&g)
+	}
 	return g
+}
+
+// layerRank orders the layers from entry to data; a call to a lower rank is a
+// backward (reverse) dependency.
+var layerRank = map[string]int{
+	graph.LayerEndpoint:   0,
+	graph.LayerController: 1,
+	graph.LayerService:    2,
+	graph.LayerPort:       3,
+	graph.LayerRepository: 4,
+	graph.LayerOther:      5,
+}
+
+// lintLayers marks architecture smells on call edges.
+func lintLayers(g *graph.Graph) {
+	node := map[string]graph.Node{}
+	for _, n := range g.Nodes {
+		node[n.ID] = n
+	}
+	classified := func(l string) bool {
+		return l == graph.LayerController || l == graph.LayerService || l == graph.LayerRepository
+	}
+	for i := range g.Edges {
+		e := &g.Edges[i]
+		if e.Kind != graph.EdgeCall {
+			continue
+		}
+		a, ok1 := node[e.From]
+		b, ok2 := node[e.To]
+		if !ok1 || !ok2 || !classified(a.Layer) || !classified(b.Layer) {
+			continue
+		}
+		switch {
+		case layerRank[b.Layer] < layerRank[a.Layer]:
+			e.Violation = graph.ViolationReverse
+		case a.Layer == graph.LayerController && b.Layer == graph.LayerRepository:
+			e.Violation = graph.ViolationSkip
+		case a.Module != "" && b.Module != "" && a.Module != b.Module:
+			e.Violation = graph.ViolationCross
+		}
+	}
 }
 
 // pruneIsolatedFuncs drops function nodes that have no incident edge (e.g.
