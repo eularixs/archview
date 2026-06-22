@@ -216,7 +216,12 @@ function computeLayout() {
       pos[e.id] = { x: x[c], y: nodeTop + i * (NODEH + VGAP), node: e.node, box: e.box, module: m };
     });
     const laneH = LANE_HEAD + rows * (NODEH + VGAP) - VGAP + 16;
-    lanes.push({ module: m, y, h: laneH, collapsed: isCol, count: laneNodes.filter(n => n.kind !== "endpoint").length });
+    // Lane width fits only the columns this module actually uses, so a module
+    // with just endpoint + controller gets a short lane instead of full width.
+    let maxColX = LEFT + COLPAD + NODEW;
+    for (const c in colGroups) maxColX = Math.max(maxColX, x[c] + NODEW);
+    const laneW = maxColX + 16 - (LEFT - 12);
+    lanes.push({ module: m, y, h: laneH, w: laneW, collapsed: isCol, count: laneNodes.filter(n => n.kind !== "endpoint").length });
     y += laneH + LANE_GAP;
   }
   const W = LEFT + COLPAD + cols.length * COLW + 24, H = y + 24;
@@ -320,7 +325,7 @@ function render() {
   const laneLayer = el("g"); content.appendChild(laneLayer);
   L.lanes.forEach((lane) => {
     const g = el("g", { class: "lane", "data-module": lane.module });
-    g.appendChild(el("rect", { class: "lane-bg", x: LEFT - 12, y: lane.y, width: L.W - LEFT - 4, height: lane.h, rx: 18 }));
+    g.appendChild(el("rect", { class: "lane-bg", x: LEFT - 12, y: lane.y, width: lane.w || (L.W - LEFT - 4), height: lane.h, rx: 18 }));
     g.appendChild(el("text", { class: "grip", x: LEFT, y: lane.y + 26 }, [txt("⠿")]));
     g.appendChild(el("text", { class: "tri", x: LEFT + 16, y: lane.y + 25 }, [txt(lane.collapsed ? "▶" : "▼")]));
     g.appendChild(el("text", { class: "lname", x: LEFT + 30, y: lane.y + 27 }, [txt(lane.module)]));
