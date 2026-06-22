@@ -11,7 +11,6 @@
 package build
 
 import (
-	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -208,49 +207,59 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 		}
 	}
 
-	// 6. Endpoint nodes + route edges to their handler. A handler that performs
-	//    a WebSocket upgrade is labeled "WS".
+	// 6. Endpoint nodes + route edges to their handler. The same method+path
+	//    registered by more than one transport (e.g. grpc + ConnectRPC for one
+	//    RPC) collapses to a single endpoint with an edge to each handler. A
+	//    handler that performs a WebSocket upgrade is labeled "WS".
 	wsUpgraders := b.res.WSUpgraders()
-	for i, r := range routes {
-		epID := fmt.Sprintf("ep:%d:%s:%s", i, r.Method, r.Path)
-		module := ""
+	epExists := map[string]bool{}
+	for _, r := range routes {
 		method := r.Method
+		var handler *analyzer.Func
 		if f := b.res.FuncFor(r.Handler); f != nil {
-			module = b.moduleOf[f.SSA]
+			handler = f
 			if wsUpgraders[f.SSA] {
 				method = "WS"
 			}
 		}
-		label := r.Path
-		if label == "" {
-			label = "(dynamic)"
-		}
-		// Click-to-source for the endpoint: the route registration site.
-		var file, editorURL string
-		var line int
-		if r.Pos.IsValid() {
-			pos := b.res.Fset.Position(r.Pos)
-			file = pos.Filename
-			if a, err := filepath.Abs(file); err == nil {
-				file = a
+		epID := "ep:" + method + ":" + r.Path
+		if !epExists[epID] {
+			epExists[epID] = true
+			label := r.Path
+			if label == "" {
+				label = "(dynamic)"
 			}
-			line = pos.Line
-			editorURL = graph.EditorURL(b.editor, file, pos.Line, pos.Column)
+			module := ""
+			if handler != nil {
+				module = b.moduleOf[handler.SSA]
+			}
+			// Click-to-source for the endpoint: the route registration site.
+			var file, editorURL string
+			var line int
+			if r.Pos.IsValid() {
+				pos := b.res.Fset.Position(r.Pos)
+				file = pos.Filename
+				if a, err := filepath.Abs(file); err == nil {
+					file = a
+				}
+				line = pos.Line
+				editorURL = graph.EditorURL(b.editor, file, pos.Line, pos.Column)
+			}
+			g.Nodes = append(g.Nodes, graph.Node{
+				ID:        epID,
+				Kind:      graph.KindEndpoint,
+				Label:     label,
+				Layer:     graph.LayerEndpoint,
+				Module:    module,
+				Method:    method,
+				Path:      r.Path,
+				File:      file,
+				Line:      line,
+				EditorURL: editorURL,
+			})
 		}
-		g.Nodes = append(g.Nodes, graph.Node{
-			ID:        epID,
-			Kind:      graph.KindEndpoint,
-			Label:     label,
-			Layer:     graph.LayerEndpoint,
-			Module:    module,
-			Method:    method,
-			Path:      r.Path,
-			File:      file,
-			Line:      line,
-			EditorURL: editorURL,
-		})
-		if f := b.res.FuncFor(r.Handler); f != nil && b.included[f.SSA] {
-			g.Edges = append(g.Edges, graph.Edge{From: epID, To: b.id(f.SSA), Kind: graph.EdgeRoute})
+		if handler != nil && b.included[handler.SSA] {
+			g.Edges = append(g.Edges, graph.Edge{From: epID, To: b.id(handler.SSA), Kind: graph.EdgeRoute})
 		}
 	}
 
