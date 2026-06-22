@@ -309,11 +309,66 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 	}
 
 	pruneIsolatedFuncs(&g)
+	pruneDisconnected(&g)
 	sortGraph(&g)
 	if b.lintLayers {
 		lintLayers(&g)
 	}
 	return g
+}
+
+// pruneDisconnected drops nodes not connected (in any edge direction) to an
+// endpoint, so wiring/setup clusters that aren't part of any request flow —
+// e.g. a grpc RegisterRoutes calling a NewServer constructor — fall away. It is
+// a no-op when no endpoints were detected, to avoid emptying the graph.
+func pruneDisconnected(g *graph.Graph) {
+	hasEndpoint := false
+	for _, n := range g.Nodes {
+		if n.Kind == graph.KindEndpoint {
+			hasEndpoint = true
+			break
+		}
+	}
+	if !hasEndpoint {
+		return
+	}
+	adj := map[string][]string{}
+	for _, e := range g.Edges {
+		adj[e.From] = append(adj[e.From], e.To)
+		adj[e.To] = append(adj[e.To], e.From)
+	}
+	keep := map[string]bool{}
+	var queue []string
+	for _, n := range g.Nodes {
+		if n.Kind == graph.KindEndpoint {
+			keep[n.ID] = true
+			queue = append(queue, n.ID)
+		}
+	}
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		for _, m := range adj[n] {
+			if !keep[m] {
+				keep[m] = true
+				queue = append(queue, m)
+			}
+		}
+	}
+	nodes := g.Nodes[:0]
+	for _, n := range g.Nodes {
+		if keep[n.ID] {
+			nodes = append(nodes, n)
+		}
+	}
+	g.Nodes = nodes
+	edges := g.Edges[:0]
+	for _, e := range g.Edges {
+		if keep[e.From] && keep[e.To] {
+			edges = append(edges, e)
+		}
+	}
+	g.Edges = edges
 }
 
 // layerRank orders the layers from entry to data; a call to a lower rank is a
