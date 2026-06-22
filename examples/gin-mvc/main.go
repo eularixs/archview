@@ -4,7 +4,6 @@ package main
 
 import (
 	"log"
-	"net/http"
 
 	"github.com/eularixs/archview"
 	"github.com/gin-gonic/gin"
@@ -41,13 +40,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// archview owns /graph; gin handles everything else.
-	mux := http.NewServeMux()
-	av.Mount(mux)
-	mux.Handle("/", r)
+	// Mount archview on gin itself; its own routes are excluded from the graph.
+	r.GET("/graph", gin.WrapH(av.Handler()))
+	r.GET("/graph/data", gin.WrapH(av.Handler()))
 
 	log.Println("listening on :8080 — open http://localhost:8080/graph")
-	if err := http.ListenAndServe(":8080", mux); err != nil {
+	if err := r.Run(":8080"); err != nil {
 		log.Fatal(err)
 	}
 }

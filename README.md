@@ -44,14 +44,16 @@ http.ListenAndServe(":8080", mux)
 Open <http://localhost:8080/graph>. `ShowPorts` and `DetectBuses` are opt-in,
 so a plain MVC graph is unchanged unless you turn them on.
 
-Using gin (or any framework)? archview owns its own path; let your framework
-handle the rest:
+Using gin (or any framework)? Mount archview on your own router — its routes are
+excluded from the graph automatically, so `/graph` never shows up as an endpoint:
 
 ```go
-mux := http.NewServeMux()
-av.Mount(mux)
-mux.Handle("/", ginEngine) // gin handles everything except /graph
+r.GET("/graph", gin.WrapH(av.Handler()))
+r.GET("/graph/data", gin.WrapH(av.Handler()))
 ```
+
+echo: `e.GET("/graph", echo.WrapHandler(av.Handler()))`. Or serve archview on its
+own `*http.ServeMux` / port with `av.Mount(mux)` for any framework.
 
 ## How it works
 
