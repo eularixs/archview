@@ -5,9 +5,10 @@ Live architecture flow graph for Go backends. Mount it in `main.go`, open
 controller → service → repository — generated automatically from your source,
 no annotations. Click any node to jump to its definition in your editor.
 
-Framework-agnostic (net/http, gin, echo, gRPC, GraphQL) and pattern-aware
-(modular MVC, hexagonal ports & adapters, CQRS / event buses): the arrows
-follow the call graph of whatever layout you actually use.
+Framework-agnostic (any HTTP router — gin, echo, fiber, chi, … — plus net/http,
+gRPC, GraphQL, ConnectRPC) and pattern-aware (modular MVC, hexagonal ports &
+adapters, CQRS / event buses): the arrows follow the call graph of whatever
+layout you actually use.
 
 > Status: **v0.3** — dev-live mode; net/http + gin + echo + gRPC + GraphQL;
 > modular MVC, hexagonal (outbound ports), and CQRS/mediator (bus detection);
@@ -114,15 +115,17 @@ its framework.
 
 | Framework | Detected |
 |-----------|----------|
+| any HTTP router | `router.GET/Get/POST/...("/path", handler)` — gin, echo, **fiber**, chi, httprouter, … (+ `Group("/api")` prefixes) |
 | net/http  | `mux.HandleFunc("GET /path", h)` (Go 1.22 method patterns) |
-| gin       | `r.GET/POST/...`, `Handle`, `Any` on `*gin.Engine` / `*gin.RouterGroup` (+ group prefixes) |
-| echo      | `e.GET/POST/...`, `Any` on `*echo.Echo` / `*echo.Group` (+ group prefixes) |
 | gRPC      | `Register<Svc>Server(reg, impl)` — each RPC method becomes an endpoint |
 | GraphQL   | gqlgen `Query/Mutation/SubscriptionResolver` — each field becomes an endpoint |
+| ConnectRPC | `New<Svc>Handler(impl)` (connectrpc.com) — each RPC method becomes an endpoint |
 
-gRPC and GraphQL detection is structural (the generated shapes), so it works
-with real `google.golang.org/grpc` / gqlgen as-is. gin and echo join
-`Group("/api")` prefixes onto routes. Add a framework by implementing the
+The router extractor is **framework-agnostic**: it matches the shared
+`router.VERB(path, handler)` shape by the verb name, a string path, and a
+function-typed handler — not by the router's concrete type — so most Go web
+frameworks work out of the box. gRPC, GraphQL and ConnectRPC are detected from
+their generated shapes. Add anything else by implementing the
 `archview.Extractor` interface and passing it in `Options.Extractors`.
 
 ## Outbound ports (hexagonal)
@@ -173,6 +176,9 @@ go -C examples/graphql run -buildvcs=false .      # http://localhost:8097/graph
 
 # echo + /api group (archview served on :9098)
 go -C examples/echo run -buildvcs=false .         # http://localhost:9098/graph
+
+# fiber + /api group
+go -C examples/fiber run -buildvcs=false .        # http://localhost:8099/graph
 ```
 
 ## Limitations
