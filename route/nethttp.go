@@ -47,6 +47,7 @@ func (netHTTPExtractor) Extract(pkg *packages.Package) []Route {
 				Method:  method,
 				Path:    path,
 				Handler: handlerFunc(info, call.Args[1]),
+				Pos:     call.Pos(),
 			})
 			return true
 		})

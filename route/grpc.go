@@ -83,6 +83,7 @@ func (grpcExtractor) Extract(pkg *packages.Package) []Route {
 					Method:  "RPC",
 					Path:    "/" + service + "/" + name,
 					Handler: methodByName(implType, name),
+					Pos:     call.Pos(),
 				})
 			}
 			return true

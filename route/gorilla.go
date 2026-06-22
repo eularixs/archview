@@ -56,6 +56,7 @@ func (gorillaExtractor) Extract(pkg *packages.Package) []Route {
 				Method:  "ANY",
 				Path:    stringLit(call.Args[0]),
 				Handler: handlerFunc(info, call.Args[1]),
+				Pos:     call.Pos(),
 			}
 			order = append(order, call)
 			return true

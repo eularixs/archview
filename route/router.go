@@ -62,6 +62,7 @@ func routerRoutes(pkg *packages.Package) []Route {
 				Method:  method,
 				Path:    joinPath(groupPrefix(info, sel.X, prefixes), path),
 				Handler: handlerFunc(info, handler),
+				Pos:     call.Pos(),
 			})
 			return true
 		})

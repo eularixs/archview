@@ -12,6 +12,7 @@ package build
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -224,14 +225,29 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 		if label == "" {
 			label = "(dynamic)"
 		}
+		// Click-to-source for the endpoint: the route registration site.
+		var file, editorURL string
+		var line int
+		if r.Pos.IsValid() {
+			pos := b.res.Fset.Position(r.Pos)
+			file = pos.Filename
+			if a, err := filepath.Abs(file); err == nil {
+				file = a
+			}
+			line = pos.Line
+			editorURL = graph.EditorURL(b.editor, file, pos.Line, pos.Column)
+		}
 		g.Nodes = append(g.Nodes, graph.Node{
-			ID:     epID,
-			Kind:   graph.KindEndpoint,
-			Label:  label,
-			Layer:  graph.LayerEndpoint,
-			Module: module,
-			Method: method,
-			Path:   r.Path,
+			ID:        epID,
+			Kind:      graph.KindEndpoint,
+			Label:     label,
+			Layer:     graph.LayerEndpoint,
+			Module:    module,
+			Method:    method,
+			Path:      r.Path,
+			File:      file,
+			Line:      line,
+			EditorURL: editorURL,
 		})
 		if f := b.res.FuncFor(r.Handler); f != nil && b.included[f.SSA] {
 			g.Edges = append(g.Edges, graph.Edge{From: epID, To: b.id(f.SSA), Kind: graph.EdgeRoute})

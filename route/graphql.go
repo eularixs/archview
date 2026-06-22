@@ -89,7 +89,8 @@ func resolveGraphQL(pkg *packages.Package) []Route {
 			}
 			service := strings.TrimSuffix(c.named.Obj().Name(), "Resolver")
 			for i := 0; i < c.iface.NumMethods(); i++ {
-				field := c.iface.Method(i).Name()
+				m := c.iface.Method(i)
+				field := m.Name()
 				path := "/" + service + "/" + lcFirst(field)
 				if seen[path] {
 					continue
@@ -99,6 +100,7 @@ func resolveGraphQL(pkg *packages.Package) []Route {
 					Method:  c.op,
 					Path:    path,
 					Handler: methodByName(ptr, field),
+					Pos:     m.Pos(),
 				})
 			}
 			break // one implementer per resolver interface is enough

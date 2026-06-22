@@ -5,6 +5,7 @@
 package route
 
 import (
+	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/packages"
@@ -15,6 +16,7 @@ type Route struct {
 	Method  string      // GET/POST/... or "ANY"
 	Path    string      // URL path (best-effort; "" when dynamic/unknown)
 	Handler *types.Func // resolved handler func, or nil if unresolvable (e.g. inline closure)
+	Pos     token.Pos   // position of the route registration site (for click-to-source)
 }
 
 // Extractor detects routes for a single framework.
