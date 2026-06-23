@@ -51,6 +51,11 @@ type Node struct {
 	Line      int    `json:"line,omitempty"`
 	EditorURL string `json:"editorURL,omitempty"`
 
+	// Hash is a location-independent digest of the function's normalized body,
+	// populated only in Raw mode. It lets external consumers (arch-diff) detect
+	// a changed body without false positives from moved or reformatted code.
+	Hash string `json:"hash,omitempty"`
+
 	// Endpoint-only fields.
 	Method string `json:"method,omitempty"`
 	Path   string `json:"path,omitempty"`

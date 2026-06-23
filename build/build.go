@@ -11,6 +11,11 @@
 package build
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"go/ast"
+	"go/printer"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -186,7 +191,7 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 	// 4. Function nodes.
 	for fn := range b.included {
 		f := b.res.Funcs[fn]
-		g.Nodes = append(g.Nodes, graph.Node{
+		node := graph.Node{
 			ID:        b.id(fn),
 			Kind:      graph.KindFunc,
 			Label:     f.Display(),
@@ -197,7 +202,11 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 			File:      f.File,
 			Line:      f.Line,
 			EditorURL: graph.EditorURL(b.editor, f.File, f.Line, f.Col),
-		})
+		}
+		if b.raw {
+			node.Hash = b.hashBody(fn)
+		}
+		g.Nodes = append(g.Nodes, node)
 	}
 
 	// 5. Call edges between included nodes (collapsing through helpers, skipping
@@ -576,6 +585,34 @@ func (b *builder) classify(pkgPath string) (layer, module string) {
 		rel = strings.TrimPrefix(rel, "/")
 	}
 	return b.cl.Classify(rel)
+}
+
+// hashBody returns a location-independent digest of fn's normalized body: the
+// AST printed via go/printer (which reformats, dropping original spacing and
+// position), then hashed. Moving the function or adding lines above it does not
+// change the result; only a real body change does.
+func (b *builder) hashBody(fn *ssa.Function) string {
+	if fn == nil || fn.Syntax() == nil {
+		return ""
+	}
+	var body ast.Node
+	switch n := fn.Syntax().(type) {
+	case *ast.FuncDecl:
+		if n.Body != nil {
+			body = n.Body
+		}
+	case *ast.FuncLit:
+		body = n.Body
+	}
+	if body == nil {
+		return ""
+	}
+	var buf bytes.Buffer
+	if err := (&printer.Config{Mode: printer.RawFormat}).Fprint(&buf, b.res.Fset, body); err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(buf.Bytes())
+	return hex.EncodeToString(sum[:8])
 }
 
 func (b *builder) id(fn *ssa.Function) string {
