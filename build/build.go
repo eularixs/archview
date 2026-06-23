@@ -48,6 +48,12 @@ type Options struct {
 	// LintLayers flags architecture smells on call edges (reverse dependencies,
 	// controller bypassing the service layer, cross-module calls).
 	LintLayers bool
+	// Raw emits the full structural graph for external consumers (e.g.
+	// arch-diff): every project function as a node, every static call edge, and
+	// classified layers — with no pruning, no helper collapse, and no
+	// endpoint-reachability filter. A node absent from the pruned UI graph
+	// (orphaned, dead) is exactly what dead-code analysis needs, so Raw keeps it.
+	Raw bool
 }
 
 type builder struct {
@@ -59,6 +65,7 @@ type builder struct {
 	showHelpers bool
 	autoLayer   bool
 	lintLayers  bool
+	raw         bool
 
 	included map[*ssa.Function]bool
 	layerOf  map[*ssa.Function]string
@@ -87,6 +94,7 @@ func Graph(res *analyzer.Result, routes []route.Route, cl *classify.Classifier, 
 		showHelpers: opts.ShowHelpers,
 		autoLayer:   opts.AutoLayer,
 		lintLayers:  opts.LintLayers,
+		raw:         opts.Raw,
 		included:    map[*ssa.Function]bool{},
 		layerOf:     map[*ssa.Function]string{},
 		moduleOf:    map[*ssa.Function]string{},
@@ -103,7 +111,7 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 		layer, module := b.classify(f.Pkg)
 		b.layerOf[fn] = layer
 		b.moduleOf[fn] = module
-		if layeredLayers[layer] && (b.showHelpers || !trivialHelper(f)) {
+		if b.raw || (layeredLayers[layer] && (b.showHelpers || !trivialHelper(f))) {
 			b.included[fn] = true
 		}
 	}
@@ -308,8 +316,10 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 		}
 	}
 
-	pruneIsolatedFuncs(&g)
-	pruneDisconnected(&g)
+	if !b.raw {
+		pruneIsolatedFuncs(&g)
+		pruneDisconnected(&g)
+	}
 	sortGraph(&g)
 	if b.lintLayers {
 		lintLayers(&g)

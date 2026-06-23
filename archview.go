@@ -65,6 +65,10 @@ type Options struct {
 	// still takes precedence where it applies. Set this to true for the curated
 	// keyword-only view.
 	DisableAutoLayer bool
+	// Raw emits the full unpruned structural graph (every function, every call
+	// edge, classified layers, no helper collapse) for external consumers such
+	// as arch-diff that need orphaned/dead nodes the UI graph drops.
+	Raw bool
 	// LintLayers flags architecture smells on call edges: a reverse dependency
 	// (e.g. repository -> service), a controller bypassing the service layer to
 	// reach a repository, and calls into another module's internals. Off by
@@ -108,6 +112,7 @@ func New(opts Options) (*Server, error) {
 		ShowHelpers: opts.ShowHelpers,
 		AutoLayer:   !opts.DisableAutoLayer,
 		LintLayers:  opts.LintLayers,
+		Raw:         opts.Raw,
 	})
 
 	h, err := web.New(opts.BasePath, g)
