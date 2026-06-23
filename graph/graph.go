@@ -21,6 +21,7 @@ const (
 	EdgeCall       = "call"       // function -> function (caller -> callee)
 	EdgeImplements = "implements" // concrete method -> port interface (adapter implements port)
 	EdgeDispatch   = "dispatch"   // caller -> handler routed through a command/event bus
+	EdgeRPC        = "rpc"        // cross-service call over the wire (SystemView stitching)
 )
 
 // Layers. "other" is the fallback for funcs that don't match a known layer.
@@ -45,6 +46,7 @@ type Node struct {
 	Label     string `json:"label"`
 	Layer     string `json:"layer"`
 	Module    string `json:"module"`
+	Service   string `json:"service,omitempty"` // owning microservice (SystemView)
 	Pkg       string `json:"pkg,omitempty"`
 	Func      string `json:"func,omitempty"`
 	File      string `json:"file,omitempty"`

@@ -65,6 +65,10 @@ type Options struct {
 	// still takes precedence where it applies. Set this to true for the curated
 	// keyword-only view.
 	DisableAutoLayer bool
+	// SystemView turns on the microservice view: services (one per cmd/<x> main)
+	// become swimlanes and cross-service calls over the wire (gRPC) are stitched
+	// as rpc edges, so a multi-service repo reads as a connected system.
+	SystemView bool
 	// Raw emits the full unpruned structural graph (every function, every call
 	// edge, classified layers, no helper collapse) for external consumers such
 	// as arch-diff that need orphaned/dead nodes the UI graph drops.
@@ -113,6 +117,7 @@ func New(opts Options) (*Server, error) {
 		AutoLayer:   !opts.DisableAutoLayer,
 		LintLayers:  opts.LintLayers,
 		Raw:         opts.Raw,
+		SystemView:  opts.SystemView,
 	})
 
 	h, err := web.New(opts.BasePath, g)

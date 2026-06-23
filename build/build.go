@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"go/ast"
 	"go/printer"
+	"go/types"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"github.com/eularixs/archview/analyzer"
 	"github.com/eularixs/archview/classify"
 	"github.com/eularixs/archview/graph"
+	"github.com/eularixs/archview/link"
 	"github.com/eularixs/archview/route"
 	"golang.org/x/tools/go/ssa"
 )
@@ -53,6 +55,11 @@ type Options struct {
 	// LintLayers flags architecture smells on call edges (reverse dependencies,
 	// controller bypassing the service layer, cross-module calls).
 	LintLayers bool
+	// SystemView turns on the microservice view: each cmd/<x> entrypoint is a
+	// service, every function is assigned to the service(s) whose main reaches
+	// it, and cross-service calls over the wire (gRPC today) are stitched as rpc
+	// edges. Modules become services so the UI lanes by service.
+	SystemView bool
 	// Raw emits the full structural graph for external consumers (e.g.
 	// arch-diff): every project function as a node, every static call edge, and
 	// classified layers — with no pruning, no helper collapse, and no
@@ -71,6 +78,7 @@ type builder struct {
 	autoLayer   bool
 	lintLayers  bool
 	raw         bool
+	systemView  bool
 
 	included map[*ssa.Function]bool
 	layerOf  map[*ssa.Function]string
@@ -100,6 +108,7 @@ func Graph(res *analyzer.Result, routes []route.Route, cl *classify.Classifier, 
 		autoLayer:   opts.AutoLayer,
 		lintLayers:  opts.LintLayers,
 		raw:         opts.Raw,
+		systemView:  opts.SystemView,
 		included:    map[*ssa.Function]bool{},
 		layerOf:     map[*ssa.Function]string{},
 		moduleOf:    map[*ssa.Function]string{},
@@ -142,6 +151,28 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 	//     bus detection so it respects the bus barrier.
 	if b.autoLayer {
 		b.inferLayers(routes)
+	}
+
+	// 2c. Microservice view: assign every function to the service(s) whose main
+	//     reaches it, and lane by service (module := service).
+	var serviceOf map[*ssa.Function]string
+	var crosses []link.Cross
+	if b.systemView {
+		serviceOf = b.detectServices()
+		for fn, svc := range serviceOf {
+			if svc != "" {
+				b.moduleOf[fn] = svc
+			}
+		}
+		// Stitch cross-service wires now and force-include both endpoints so the
+		// edge survives even when a handler is only reachable over the wire.
+		for _, c := range link.Stitch(b.res, link.Default()) {
+			if b.res.Funcs[c.From] != nil && b.res.Funcs[c.To] != nil {
+				b.included[c.From] = true
+				b.included[c.To] = true
+				crosses = append(crosses, c)
+			}
+		}
 	}
 
 	// 3. Resolve outbound ports and the direct call edges they replace.
@@ -205,6 +236,9 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 		}
 		if b.raw {
 			node.Hash = b.hashBody(fn)
+		}
+		if serviceOf != nil {
+			node.Service = serviceOf[fn]
 		}
 		g.Nodes = append(g.Nodes, node)
 	}
@@ -322,6 +356,19 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 				seenD[key] = true
 				g.Edges = append(g.Edges, graph.Edge{From: from, To: to, Kind: graph.EdgeDispatch})
 			}
+		}
+	}
+
+	if b.systemView {
+		seenX := map[string]bool{}
+		for _, c := range crosses {
+			from, to := b.id(c.From), b.id(c.To)
+			key := from + "->" + to
+			if from == to || seenX[key] {
+				continue
+			}
+			seenX[key] = true
+			g.Edges = append(g.Edges, graph.Edge{From: from, To: to, Kind: graph.EdgeRPC})
 		}
 	}
 
@@ -613,6 +660,70 @@ func (b *builder) hashBody(fn *ssa.Function) string {
 	}
 	sum := sha256.Sum256(buf.Bytes())
 	return hex.EncodeToString(sum[:8])
+}
+
+// detectServices assigns each project function to the microservice that owns
+// it: every `func main` in a main package is a service (named by its directory,
+// e.g. cmd/enricher -> "enricher"), and a function belongs to the service(s)
+// whose main transitively imports its package. A package imported by more than
+// one service is "shared". This is import-closure based (not call-graph based)
+// so it still owns route/RPC handlers, which are registered rather than called.
+func (b *builder) detectServices() map[*ssa.Function]string {
+	pkgService := map[string]map[string]bool{}
+	add := func(pkgPath, svc string) {
+		if pkgService[pkgPath] == nil {
+			pkgService[pkgPath] = map[string]bool{}
+		}
+		pkgService[pkgPath][svc] = true
+	}
+	for fn := range b.res.Funcs {
+		if fn.Name() != "main" || fn.Signature == nil || fn.Signature.Recv() != nil ||
+			fn.Pkg == nil || fn.Pkg.Pkg == nil || fn.Pkg.Pkg.Name() != "main" {
+			continue
+		}
+		svc := serviceName(fn.Pkg.Pkg.Path())
+		// BFS over the transitive import closure, keeping project packages.
+		seen := map[string]bool{}
+		queue := []*types.Package{fn.Pkg.Pkg}
+		for len(queue) > 0 {
+			pkg := queue[0]
+			queue = queue[1:]
+			if pkg == nil || seen[pkg.Path()] {
+				continue
+			}
+			seen[pkg.Path()] = true
+			if b.res.InProject(pkg.Path()) {
+				add(pkg.Path(), svc)
+			}
+			queue = append(queue, pkg.Imports()...)
+		}
+	}
+	out := map[*ssa.Function]string{}
+	for fn := range b.res.Funcs {
+		if fn.Pkg == nil || fn.Pkg.Pkg == nil {
+			continue
+		}
+		svcs := pkgService[fn.Pkg.Pkg.Path()]
+		switch len(svcs) {
+		case 0:
+		case 1:
+			for sv := range svcs {
+				out[fn] = sv
+			}
+		default:
+			out[fn] = "shared"
+		}
+	}
+	return out
+}
+
+// serviceName derives a service label from a main package import path: its last
+// path segment (cmd/enricher -> "enricher").
+func serviceName(pkgPath string) string {
+	if i := strings.LastIndex(pkgPath, "/"); i >= 0 {
+		return pkgPath[i+1:]
+	}
+	return pkgPath
 }
 
 func (b *builder) id(fn *ssa.Function) string {
