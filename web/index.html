@@ -155,7 +155,7 @@ const short = f => { if (!f) return ""; const s = f.split("/"); return s.slice(-
 const shortPkg = p => { if (!p) return ""; const s = p.split("/"); return s.slice(-2).join("/"); };
 const off = (m, k) => m[k] || { dx: 0, dy: 0 };
 const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; };
-const methodColor = m => m === "POST" ? "#5B9BFF" : m === "DELETE" ? "#F87171" : m === "PUT" || m === "PATCH" ? "#FBBF24" : m === "WS" ? "#A78BFA" : m === "RPC" ? "#34D399" : "#2DD4BF";
+const methodColor = m => m === "POST" ? "#5B9BFF" : m === "DELETE" ? "#F87171" : m === "PUT" || m === "PATCH" ? "#FBBF24" : m === "WS" ? "#A78BFA" : m === "RPC" ? "#34D399" : m === "SUB" ? "#FB923C" : "#2DD4BF";
 
 let G, nodeById = {}, modulesAll = [];
 const collapsed = new Set();

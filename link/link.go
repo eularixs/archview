@@ -28,7 +28,7 @@ type Extractor interface {
 
 // Default returns the built-in extractors. gRPC first; others are additive.
 func Default() []Extractor {
-	return []Extractor{grpcExtractor{}}
+	return []Extractor{grpcExtractor{}, kafkaExtractor{}}
 }
 
 // Cross is a stitched cross-service call: From consumes the key that To exposes.
