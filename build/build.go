@@ -159,11 +159,6 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 	var crosses []link.Cross
 	if b.systemView {
 		serviceOf = b.detectServices()
-		for fn, svc := range serviceOf {
-			if svc != "" {
-				b.moduleOf[fn] = svc
-			}
-		}
 		// Stitch cross-service wires now and force-include both endpoints so the
 		// edge survives even when a handler is only reachable over the wire.
 		for _, c := range link.Stitch(b.res, link.Default()) {
@@ -296,12 +291,17 @@ func (b *builder) run(routes []route.Route) graph.Graph {
 				line = pos.Line
 				editorURL = graph.EditorURL(b.editor, file, pos.Line, pos.Column)
 			}
+			epService := ""
+			if serviceOf != nil && handler != nil {
+				epService = serviceOf[handler.SSA]
+			}
 			g.Nodes = append(g.Nodes, graph.Node{
 				ID:        epID,
 				Kind:      graph.KindEndpoint,
 				Label:     label,
 				Layer:     graph.LayerEndpoint,
 				Module:    module,
+				Service:   epService,
 				Method:    method,
 				Path:      r.Path,
 				File:      file,

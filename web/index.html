@@ -49,6 +49,11 @@
     font: 500 12px var(--mono); padding: 6px 11px; border-radius: 8px; cursor: pointer; }
   .toolbar button:hover { background: #ffffff12; color: #fff; }
   .toolbar .sep { width: 1px; background: var(--line); margin: 4px 2px; }
+  .toolbar select { appearance: none; border: 1px solid var(--line); background: #0d1320; color: #fff;
+    font: 500 12px var(--mono); padding: 6px 26px 6px 11px; border-radius: 8px; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2393a3bb' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 9px center; }
+  .toolbar select:hover { border-color: #ffffff30; }
 
   .lane .lane-bg { fill: #ffffff03; stroke: var(--line2); stroke-width: 1; }
   .lane { cursor: grab; }
@@ -158,6 +163,7 @@ const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${
 const methodColor = m => m === "POST" ? "#5B9BFF" : m === "DELETE" ? "#F87171" : m === "PUT" || m === "PATCH" ? "#FBBF24" : m === "WS" ? "#A78BFA" : m === "RPC" ? "#34D399" : m === "SUB" ? "#FB923C" : "#2DD4BF";
 
 let G, nodeById = {}, modulesAll = [];
+let focusService = null, hasServices = false;
 const collapsed = new Set();
 const nodeDelta = {}, laneOffset = {};
 let Pbase = {}, P = {};
@@ -177,18 +183,22 @@ async function main() {
     `${G.nodes.length} nodes · ${G.edges.length} edges` + (vcount ? ` · ⚠ ${vcount} issue${vcount > 1 ? "s" : ""}` : "");
   if (vcount) document.getElementById("counts").style.color = "#F87171";
   for (const n of G.nodes) nodeById[n.id] = n;
+  hasServices = G.nodes.some(n => n.service);
   loadLayout();
   if (!G.nodes.length) { document.getElementById("empty").classList.add("show"); return; }
-  modulesAll = [...new Set(G.nodes.map(moduleName))].sort();
+  modulesAll = [...new Set(visNodes().map(moduleName))].sort();
   setupControls();
+  buildServiceFilter();
   render();
 }
 
-const moduleName = n => n.module || "(root)";
+const visNodes = () => focusService ? G.nodes.filter(n => (n.service || "") === focusService) : G.nodes;
+const laneByService = () => hasServices && !focusService;
+const moduleName = n => laneByService() ? (n.service || "·shared") : (n.module || "(root)");
 
 function columns() {
   const present = new Set();
-  for (const n of G.nodes) present.add(n.layer);
+  for (const n of visNodes()) present.add(n.layer);
   if (collapsed.size) present.add("controller");
   const cols = LAYER_ORDER.filter(l => present.has(l));
   const x = {}; cols.forEach((l, i) => x[l] = LEFT + COLPAD + i * COLW);
@@ -198,12 +208,12 @@ function columns() {
 function computeLayout() {
   const { cols, x } = columns();
   const boxCol = x.controller != null ? "controller" : (cols.find(c => c !== "endpoint") || cols[0]);
-  const modules = [...new Set(G.nodes.map(moduleName))].sort();
+  const modules = [...new Set(visNodes().map(moduleName))].sort();
   const pos = {}, lanes = [];
   let y = TOP + 20;
 
   for (const m of modules) {
-    const laneNodes = G.nodes.filter(n => moduleName(n) === m);
+    const laneNodes = visNodes().filter(n => moduleName(n) === m);
     const isCol = collapsed.has(m);
     const colGroups = {};
     const push = (layer, e) => (colGroups[layer] = colGroups[layer] || []).push(e);
@@ -555,6 +565,33 @@ function zoomBy(k) {
   const cx = view.x + view.w / 2, cy = view.y + view.h / 2;
   view.x = cx - (cx - view.x) * k; view.y = cy - (cy - view.y) * k;
   view.w *= k; view.h *= k; applyView();
+}
+
+function setFocus(svc) {
+  focusService = svc || null;
+  collapsed.clear();
+  modulesAll = [...new Set(visNodes().map(moduleName))].sort();
+  document.getElementById("module").textContent =
+    (G.module || "") + (focusService ? "  ›  " + focusService : "");
+  render(); fitView();
+}
+
+function buildServiceFilter() {
+  if (!hasServices) return;
+  const services = [...new Set(G.nodes.map(n => n.service).filter(Boolean))].sort();
+  const tb = document.getElementById("toolbar");
+  const wrap = document.createElement("span");
+  wrap.className = "svcfilter";
+  const sel = document.createElement("select");
+  sel.id = "svcsel";
+  sel.title = "focus a service";
+  sel.innerHTML = '<option value="">All services</option>' +
+    services.map(s => `<option value="${s}">${s}</option>`).join("");
+  sel.addEventListener("change", () => setFocus(sel.value));
+  wrap.appendChild(sel);
+  const sep = document.createElement("span"); sep.className = "sep";
+  tb.insertBefore(sep, tb.firstChild);
+  tb.insertBefore(wrap, tb.firstChild);
 }
 
 function setupControls() {
