@@ -192,9 +192,26 @@ async function main() {
   render();
 }
 
-const visNodes = () => focusService ? G.nodes.filter(n => (n.service || "") === focusService) : G.nodes;
+const visNodes = () => {
+  if (!focusService) return G.nodes;
+  const inS = G.nodes.filter(n => (n.service || "") === focusService);
+  const ids = new Set(inS.map(n => n.id));
+  const bset = new Set();
+  for (const e of G.edges) {
+    if (e.kind !== "rpc") continue;
+    if (ids.has(e.from) && !ids.has(e.to)) bset.add(e.to);
+    else if (ids.has(e.to) && !ids.has(e.from)) bset.add(e.from);
+  }
+  const boundary = G.nodes.filter(n => bset.has(n.id) && !ids.has(n.id));
+  return inS.concat(boundary);
+};
+const isBoundary = n => focusService && n.service && n.service !== focusService;
 const laneByService = () => hasServices && !focusService;
-const moduleName = n => laneByService() ? (n.service || "·shared") : (n.module || "(root)");
+const moduleName = n => {
+  if (laneByService()) return n.service || "·shared";
+  if (isBoundary(n)) return "⇄ " + n.service;
+  return n.module || "(root)";
+};
 
 function columns() {
   const present = new Set();
@@ -413,8 +430,16 @@ function buildNode(id, b) {
     return g1;
   }
 
+  const bound = isBoundary(n);
   g1.appendChild(el("rect", { class: "card", width: NODEW, height: NODEH, rx: 14,
-    fill: `url(#grad-${n.layer})`, stroke: rgba(color, 0.42) }));
+    fill: `url(#grad-${n.layer})`, stroke: rgba(color, bound ? 0.3 : 0.42),
+    "stroke-dasharray": bound ? "6 4" : "0" }));
+  if (bound) {
+    g1.setAttribute("opacity", "0.62");
+    const bw = 22 + n.service.length * 6.6;
+    g1.appendChild(el("rect", { x: 18, y: 13, width: bw, height: 18, rx: 6, fill: rgba(color, 0.13), stroke: rgba(color, 0.45) }));
+    g1.appendChild(el("text", { class: "sub", x: 18 + bw / 2, y: 26, "text-anchor": "middle", fill: color }, [txt("⇄ " + n.service)]));
+  }
   // glow dot top-right
   const dot = el("circle", { class: "glowdot", cx: NODEW - 18, cy: 18, r: 4.5, fill: color });
   dot.setAttribute("style", `filter: drop-shadow(0 0 6px ${rgba(color, 0.9)})`);
@@ -430,9 +455,10 @@ function buildNode(id, b) {
       [txt(route.length > 30 ? route.slice(0, 29) + "…" : route)]));
   } else {
     const label = n.label.length > 34 ? n.label.slice(0, 33) + "…" : n.label;
-    g1.appendChild(el("text", { class: "ident", x: 18, y: 38 }, [txt(label)]));
+    const ly = bound ? 50 : 38, sy = bound ? 68 : 60;
+    g1.appendChild(el("text", { class: "ident", x: 18, y: ly }, [txt(label)]));
     const sub = (n.module ? n.module + "  ·  " : "") + shortPkg(n.pkg);
-    g1.appendChild(el("text", { class: "sub", x: 18, y: 60 }, [txt(sub)]));
+    g1.appendChild(el("text", { class: "sub", x: 18, y: sy }, [txt(sub)]));
   }
   wire(g1, id);
   return g1;
